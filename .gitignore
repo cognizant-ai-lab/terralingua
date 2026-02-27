@@ -1,0 +1,14 @@
+**/__pycache__/**
+*.json
+!analysis_scripts/tags.json
+*.log
+.env
+**/logs/** 
+*.egg-info/
+*.joblib
+experimental_legacy/
+plots/
+*.png
+*.pdf
+*-checkpoint.ipynb
+*.svg

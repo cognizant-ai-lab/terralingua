@@ -1,0 +1,90 @@
+
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "open-gridworld"
+version = "0.1.0"
+requires-python = ">=3.10"
+# If you want to mirror requirements.txt here, list them under dependencies:
+# dependencies = ["numpy", "gymnasium", ...]
+dependencies = [
+    "numpy",
+    "pandas",
+    "pygame",
+    "gymnasium",
+    "pettingzoo",
+    "openai",
+    "anthropic",
+    "python-dotenv",
+    "matplotlib",
+    "jupyter",
+    "networkx",
+    "scipy",
+    "umap-learn",
+    "hdbscan",
+    "torch",
+    "Pillow",
+    "requests",
+    "scikit-learn",
+    "jinja2",
+    "tqdm",
+    "tiktoken",
+    "transformers",
+    "datasets",
+    "spacy",
+    "cdlib",
+    "zstandard",
+    "joblib",
+    "pydot",
+    "graphviz",
+    "mplcursors",
+]
+
+[tool.setuptools]
+package-dir = {"" = "."}
+py-modules = ["main"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "analysis_scripts*"]
+exclude = ["logs*", "plots*", "*.egg-info", "__pycache__"]
+
+
+[project.scripts]
+open-gridworld-run = "main:main"
+
+[tool.ruff]
+# Format all Python files
+include = ["*.py"]
+exclude = ["__pycache__", ".venv", ".ruff_cache", ".git", "*.egg-info"]
+
+# Set the line length to match Black / PEP8-style defaults
+line-length = 88
+
+# Apply all default linting rules except F401 (unused imports)
+select = ["E", "F", "W", "I"]  # E: pycodestyle, F: pyflakes, W: warnings, I: isort
+ignore = ["F401"]
+
+# Enable import sorting (compatible with isort)
+fix = true
+
+# Show full rule explanations if desired
+show-fixes = true
+
+# Use this to format code with Ruff as well
+[tool.ruff.format]
+quote-style = "double"  # or "single" if preferred
+indent-style = "space"
+
+[tool.ruff.lint]
+# Optional: Only apply linting to these folders
+# path = ["src", "tests"]
+
+# Optional: If you're using __all__ and want to allow unused imports for that
+dummy-variable-rgx = "^_"  # allow names like _ or _var
+
+[tool.ruff.lint.per-file-ignores]
+# Example: ignore unused import warnings in __init__.py
+"__init__.py" = ["F401"]
