@@ -1,6 +1,10 @@
 # TerraLingua
 
-> **Paper:** [link coming soon]
+**Paper:** [link coming soon]
+
+**Dataset:** https://huggingface.co/datasets/GPaolo/TerraLingua
+
+**Dataset dashboard:** https://aianthropology.decisionai.ml/
 
 A multi-agent simulation framework for studying emergent behavior, artifact creation, and cultural evolution.
 
@@ -134,10 +138,10 @@ jupyter notebook analysis_scripts/notebooks/
 If you use TerraLingua in your research, please cite:
 
 ```bibtex
-@article{terralinguia2025,
-  title   = {coming soon},
-  author  = {coming soon},
-  journal = {coming soon},
-  year    = {2025},
+@article{terralingua2026,
+  title   = {TerraLingua: Emergence and Analysis of Open-endedness in LLM Ecologies},
+  author  = {Paolo, Giuseppe and Warner, Jamieson and Shahrzad, Hormoz and Hodjat, Babak and Miikkulainen, Risto and Meyerson, Elliot},
+  journal = {ArXiv},
+  year    = {2026},
 }
 ```
