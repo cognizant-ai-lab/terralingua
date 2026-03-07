@@ -1,12 +1,23 @@
 # TerraLingua
 
-> **Paper:** [link coming soon]
+**Paper:** [link coming soon]
+
+**Dataset:** https://huggingface.co/datasets/GPaolo/TerraLingua
+
+**Dataset dashboard:** https://aianthropology.decisionai.ml/
+
+![TerraLingua agents](assets/environment.gif)
 
 A multi-agent simulation framework for studying emergent behavior, artifact creation, and cultural evolution.
 
 LLM-powered agents (Claude or other models) interact in a shared 2D grid environment — foraging for resources, creating text artifacts, reproducing, and communicating — enabling research into how language-using agents develop social structure and culture over time.
 
 After each experiment, the **AI Anthropologist** — itself an LLM agent — analyzes the simulation logs to annotate agent behaviors, infer group dynamics, classify artifacts, and trace cultural lineages, providing a qualitative and quantitative account of what emerged.
+
+An overview of the TerraLingua system and of the AI-Anthropologist is shown in the figure below.
+
+![TerraLingua and the AI Anthropologist](assets/whole.png)
+
 
 ## Installation
 
@@ -134,10 +145,10 @@ jupyter notebook analysis_scripts/notebooks/
 If you use TerraLingua in your research, please cite:
 
 ```bibtex
-@article{terralinguia2025,
-  title   = {coming soon},
-  author  = {coming soon},
-  journal = {coming soon},
-  year    = {2025},
+@article{terralingua2026,
+  title   = {TerraLingua: Emergence and Analysis of Open-endedness in LLM Ecologies},
+  author  = {Paolo, Giuseppe and Warner, Jamieson and Shahrzad, Hormoz and Hodjat, Babak and Miikkulainen, Risto and Meyerson, Elliot},
+  journal = {ArXiv},
+  year    = {2026},
 }
 ```
