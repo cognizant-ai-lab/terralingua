@@ -1,6 +1,6 @@
 # TerraLingua
 
-**Paper:** [link coming soon]
+**Paper:** [Link](https://www.researchgate.net/publication/402263491_TerraLingua_Emergence_and_Analysis_of_Open-endedness_in_LLM_Ecologies)
 
 **Dataset:** https://huggingface.co/datasets/GPaolo/TerraLingua
 
@@ -145,10 +145,14 @@ jupyter notebook analysis_scripts/notebooks/
 If you use TerraLingua in your research, please cite:
 
 ```bibtex
-@article{terralingua2026,
-  title   = {TerraLingua: Emergence and Analysis of Open-endedness in LLM Ecologies},
-  author  = {Paolo, Giuseppe and Warner, Jamieson and Shahrzad, Hormoz and Hodjat, Babak and Miikkulainen, Risto and Meyerson, Elliot},
-  journal = {ArXiv},
-  year    = {2026},
+@techreport{paolo26terralingua,
+title = "TerraLingua: Emergence and Analysis of Open-Endedness in LLM Ecologies",
+author = "Giuseppe Paolo and Jamieson Warner and Hormoz Shahrzad and Babak Hodjat and Risto Miikkulainen and Elliot Meyerson",
+year = 2026,
+month = jan,
+institution = "Cognizant AI Lab",
+url = "https://www.researchgate.net/publication/402263491_TerraLingua_Emergence_and_Analysis_of_Open-endedness_in_LLM_Ecologies",
+doi = "10.13140/RG.2.2.25551.55206",
+number = "2026-01",
 }
 ```
