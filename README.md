@@ -145,7 +145,7 @@ jupyter notebook analysis_scripts/notebooks/
 If you use TerraLingua in your research, please cite:
 
 ```bibtex
-@techreport{paolo:terralingua26,
+@techreport{paolo26terralingua,
 title = "TerraLingua: Emergence and Analysis of Open-Endedness in LLM Ecologies",
 author = "Giuseppe Paolo and Jamieson Warner and Hormoz Shahrzad and Babak Hodjat and Risto Miikkulainen and Elliot Meyerson",
 year = 2026,
