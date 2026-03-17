@@ -153,5 +153,6 @@ month = jan,
 institution = "Cognizant AI Lab",
 url = "https://www.researchgate.net/publication/402263491_TerraLingua_Emergence_and_Analysis_of_Open-endedness_in_LLM_Ecologies",
 doi = "10.13140/RG.2.2.25551.55206",
+number = "2026-01",
 }
 ```
