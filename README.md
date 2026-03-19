@@ -1,6 +1,6 @@
 # TerraLingua
 
-**Paper:** [Link](https://www.researchgate.net/publication/402263491_TerraLingua_Emergence_and_Analysis_of_Open-endedness_in_LLM_Ecologies)
+**Paper:** [Link](https://www.researchgate.net/publication/402263491_TerraLingua_Emergence_and_Analysis_of_Open-endedness_in_LLM_Ecologies) - [ArXiv](https://arxiv.org/abs/2603.16910)
 
 **Dataset:** https://huggingface.co/datasets/GPaolo/TerraLingua
 
