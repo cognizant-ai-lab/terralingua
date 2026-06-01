@@ -1,6 +1,6 @@
 # TerraLingua
 
-**Paper:** [Link](https://www.researchgate.net/publication/402263491_TerraLingua_Emergence_and_Analysis_of_Open-endedness_in_LLM_Ecologies)
+**Paper:** [Link](https://arxiv.org/abs/2603.16910)
 
 **Dataset:** https://huggingface.co/datasets/GPaolo/TerraLingua
 
@@ -151,8 +151,8 @@ author = "Giuseppe Paolo and Jamieson Warner and Hormoz Shahrzad and Babak Hodja
 year = 2026,
 month = jan,
 institution = "Cognizant AI Lab",
-url = "https://www.researchgate.net/publication/402263491_TerraLingua_Emergence_and_Analysis_of_Open-endedness_in_LLM_Ecologies",
-doi = "10.13140/RG.2.2.25551.55206",
+url = "https://arxiv.org/abs/2603.16910",
+doi = "10.48550/arXiv.2603.16910",
 number = "2026-01",
 }
 ```
