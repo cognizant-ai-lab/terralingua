@@ -163,7 +163,7 @@
       var code = document.getElementById('bibtex');
       if (!btn || !code) return;
       btn.addEventListener('click', function () {
-        var text = code.innerText;
+        var text = code.textContent;
         var done = function () {
           var original = btn.textContent;
           btn.textContent = 'Copied!';
