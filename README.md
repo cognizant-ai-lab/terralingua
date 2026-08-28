@@ -23,6 +23,19 @@ An overview of the TerraLingua system and of the AI-Anthropologist is shown in t
 
 Requires **Python 3.13+**.
 
+Experiments that generate videos also require **ffmpeg**. On macOS, install it
+with [Homebrew](https://brew.sh/):
+
+```bash
+brew install ffmpeg
+```
+
+Verify that it is available on your `PATH`:
+
+```bash
+ffmpeg -version
+```
+
 **Using venv:**
 
 ```bash
