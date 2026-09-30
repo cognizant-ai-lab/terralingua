@@ -1,3 +1,5 @@
+import { escHtml } from './state.js';
+
 export function showSnapshotModal(blobOrPromise = null) {
   const url = window.location.href;
   const msg = "Check out the live TerraLingua simulation!";
@@ -22,7 +24,7 @@ export function showSnapshotModal(blobOrPromise = null) {
         </div>
         ` : ""}
         <div class="snapshot-url-row">
-          <input class="snapshot-url-input" id="_snapshotUrl" readonly value="${url.replace(/"/g, "&quot;")}" />
+          <input class="snapshot-url-input" id="_snapshotUrl" readonly value="${escHtml(url)}" />
         </div>
         <button class="snapshot-copy-btn snapshot-copy-main-btn" id="_snapshotCopy" ${hasCapture ? "disabled" : ""}>Copy screenshot</button>
         <div class="snapshot-social-row">
