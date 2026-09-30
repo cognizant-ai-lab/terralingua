@@ -1442,7 +1442,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
         to_dispatch: dict[str, dict] = {}
         for server, requests in requests_by_server.items():
             validation = self.voting_managers[server].validate(
-                actions, requests, self._stay_action
+                actions, requests, self._stay_action, rng=self.env.rng
             )
             to_dispatch.update(validation.to_dispatch)
             state.broadcasts.update(validation.broadcasts)

@@ -66,7 +66,7 @@ class VotingManager:
         self.rewards = rewards
 
     def validate(
-        self, actions: dict, requests: dict, no_op_action: dict
+        self, actions: dict, requests: dict, no_op_action: dict, rng=None
     ) -> Validation:
         raise NotImplementedError
 
@@ -110,7 +110,7 @@ class IndependentVotingManager(VotingManager):
         self._callers: dict = {}
 
     def validate(
-        self, actions: dict, requests: dict, no_op_action: dict
+        self, actions: dict, requests: dict, no_op_action: dict, rng=None
     ) -> Validation:
         self._callers = dict(requests)
         return Validation(to_dispatch=dict(requests))
@@ -137,7 +137,7 @@ class UnanimousVotingManager(VotingManager):
         self._outcomes: dict = {}
 
     def validate(
-        self, actions: dict, requests: dict, no_op_action: dict
+        self, actions: dict, requests: dict, no_op_action: dict, rng=None
     ) -> Validation:
         self._outcomes = {}
         groups: dict = {}
@@ -148,7 +148,7 @@ class UnanimousVotingManager(VotingManager):
         to_dispatch: dict = {}
         broadcasts: dict = {}
         for topic, group in groups.items():
-            outcome = elect([Ballot(tag, action_key(args)) for tag, args in group.items()])
+            outcome = elect([Ballot(tag, action_key(args)) for tag, args in group.items()], rng)
             if outcome is None:
                 continue
             self._outcomes[topic] = outcome

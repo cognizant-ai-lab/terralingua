@@ -106,7 +106,7 @@ def _runner_self(batch: bool):
         },
         voting_managers={"world": IndependentVotingManager(DirectRewards(0.0))},
         _stay_action={"action": "noop", "params": {}},
-        env=types.SimpleNamespace(),
+        env=types.SimpleNamespace(rng=None),
     )
     return fs, manager
 

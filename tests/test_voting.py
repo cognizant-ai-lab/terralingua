@@ -8,6 +8,7 @@ that previously lived in the in-runner unanimous coordinator.
 import json
 import random
 
+import numpy as np
 import pytest
 
 from terralingua.voting.election import Ballot, VoteOutcome, elect
@@ -46,15 +47,16 @@ def test_elect_tie_breaks_randomly_among_tied():
     rule punished late-alphabet actions (an action that always loses ties by spelling)."""
     winners = set()
     for seed in range(20):
-        random.seed(seed)
-        out = elect([Ballot("a0", "b"), Ballot("a1", "a")])
+        out = elect([Ballot("a0", "b"), Ballot("a1", "a")], np.random.default_rng(seed))
         assert out.winning_choice in ("a", "b")
         assert out.representative == ("a1" if out.winning_choice == "a" else "a0")
         winners.add(out.winning_choice)
     assert winners == {"a", "b"}  # both sides of the tie can win
+    # The same generator state gives the same winner: seeded runs repeat.
+    tie = [Ballot("a0", "b"), Ballot("a1", "a")]
+    assert elect(tie, np.random.default_rng(3)).winning_choice == elect(tie, np.random.default_rng(3)).winning_choice
     # A clear majority is never randomized away.
-    random.seed(0)
-    out = elect([Ballot("a0", "b"), Ballot("a1", "a"), Ballot("a2", "a")])
+    out = elect([Ballot("a0", "b"), Ballot("a1", "a"), Ballot("a2", "a")], np.random.default_rng(0))
     assert out.winning_choice == "a"
 
 
