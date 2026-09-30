@@ -89,22 +89,33 @@ export async function saveApiKey(plaintext) {
 }
 
 export async function loadApiKey() {
-  // One-time migration from legacy localStorage formats.
+  // One-time migration from legacy localStorage formats. A legacy entry is
+  // removed only after the new store holds the key. If the browser database
+  // is unavailable, the entry stays for the next load and the key is still
+  // returned for this session.
   const legacyPlain = localStorage.getItem(LEGACY_PLAIN);
   if (legacyPlain) {
-    localStorage.removeItem(LEGACY_PLAIN);
-    await saveApiKey(legacyPlain);
+    try {
+      await saveApiKey(legacyPlain);
+      localStorage.removeItem(LEGACY_PLAIN);
+    } catch (_) {}
     return legacyPlain;
   }
   const legacyV2 = localStorage.getItem(LEGACY_V2);
   if (legacyV2) {
-    localStorage.removeItem(LEGACY_V2);
+    let plaintext = null;
     try {
-      const plaintext = await _decryptLegacyV2(JSON.parse(legacyV2));
-      await saveApiKey(plaintext);
-      return plaintext;
+      plaintext = await _decryptLegacyV2(JSON.parse(legacyV2));
     } catch (_) {
-      return "";
+      // Unreadable: it can never migrate, so it must not block the new store.
+      localStorage.removeItem(LEGACY_V2);
+    }
+    if (plaintext !== null) {
+      try {
+        await saveApiKey(plaintext);
+        localStorage.removeItem(LEGACY_V2);
+      } catch (_) {}
+      return plaintext;
     }
   }
 
