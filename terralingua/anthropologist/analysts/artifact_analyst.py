@@ -4,7 +4,7 @@ ArtifactAnalyst: expert in artifact culture — classification, novelty, phyloge
 Combines logic from:
   - 004_artifact_analysis.py   (novelty scoring + complexity metrics)
   - 005_artifact_classification.py  (category classification)
-  - 006_artifact_philogeny.py  (ancestry tracing)
+  - 006_artifact_phylogeny.py  (ancestry tracing)
 """
 
 import asyncio
@@ -155,7 +155,7 @@ New artifacts: {new_artifacts}
 
 
 # ---------------------------------------------------------------------------
-# Phylogeny prompts (from 006_artifact_philogeny.py)
+# Phylogeny prompts (from 006_artifact_phylogeny.py)
 # ---------------------------------------------------------------------------
 
 _FINER_SYSTEM_PROMPT = """

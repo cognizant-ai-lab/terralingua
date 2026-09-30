@@ -71,7 +71,7 @@ The scripts follow a numbered order and run from the repository root. Set `EXPER
 | `003_llm_group_analyser.py` | Group-level behavioral analysis |
 | `004_artifact_analysis.py` | Compute artifact complexity metrics |
 | `005_artifact_classification.py` | Classify artifacts into behavioral categories |
-| `006_artifact_philogeny.py` | Analyze artifact genealogy and conceptual ancestry |
+| `006_artifact_phylogeny.py` | Analyze artifact genealogy and conceptual ancestry |
 | `007_anthropologist.py` | Run the whole pipeline over a finished run |
 
 ```bash

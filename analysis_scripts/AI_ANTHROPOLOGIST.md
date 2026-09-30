@@ -121,7 +121,7 @@ When multiple categories apply, the highest-complexity one is assigned. Results 
 
 ---
 
-### `006_artifact_philogeny.py` — Artifact phylogeny reconstruction
+### `006_artifact_phylogeny.py` — Artifact phylogeny reconstruction
 
 Reconstructs the dependency graph of artifacts — which prior artifacts influenced each new one.
 
