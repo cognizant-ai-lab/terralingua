@@ -1,0 +1,31 @@
+# Ablation where agents have no personality traits.
+# From paper_experiment_scripts/run_no_personality.sh of the first public release.
+name: paper_no_personality
+description: Ablation where agents have no personality traits.
+config:
+  run:
+    exp_name: no_personality
+    exp_description: Ablation where agents have no personality traits.
+    max_ts: 3000
+    env_heartbeat: -1
+    ckpt_interval: 100
+    save_video: true
+    video_fps: 10
+  agent:
+    model: DeepSeek-R1-32
+    scenario_specific_instructions: base
+    genome: no_traits
+    max_history: 1
+    internal_memory_size: 150
+  env:
+    grid_size: 50
+    init_agents: 20
+    init_agent_energy: 50
+    food_zones: 1
+    food_spawn_rate: 1
+    agent_lifespan: 100
+    vision_radius: 6
+    drop_food_on_death: true
+    artifact_creation_cost: 0
+    reproduction_cost: 50
+    dynamic_grid_scaling: false

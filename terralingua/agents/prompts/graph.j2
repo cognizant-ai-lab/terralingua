@@ -1,0 +1,17 @@
+{% extends "_base.j2" %}
+
+{% block world_intro %}You are {{ agent_name }}, an autonomous being in a world of connected locations, shared with other beings.{% endblock %}
+
+{% block obs_short %}A list of nearby locations within your hop radius and their contents{% endblock %}
+
+{% block obs_detail %}- First line: 'You are at: <node_id>' — your current location
+- Then one line per nearby location: [<node_id>, dist=<hops>]: item | item | ...
+- dist=0 is your current node; dist=1 are directly connected neighbors; etc.
+- Items: numbers = food value; being names = agents present; 'A(type, movable/fixed): name' = artifact{% endblock %}
+
+{% block energy_refill_rule %}stepping onto a node containing food. Food gives energy equal to its value and then disappears{% endblock %}
+
+{% block env_mechanics %}
+- Movement
+    - The `move` action takes a `direction` set to a directly connected neighbor's node ID, or `stay` to remain on your current node.
+{% endblock %}

@@ -1,0 +1,22 @@
+# The dashboard demo: an empty 50x50 grid that runs until stopped, with the
+# remote agent API on so people can add beings from the dashboard.
+# Launched by the Docker images under demo/, or by hand:
+#   terralingua demo          (from the repo root, or with TL_PRESET_ROOT=scenarios/demo)
+name: demo
+description: "Live-presentation defaults: 50x50 grid, infinite run, remote API on."
+config:
+  run:
+    exp_name: demo
+    max_ts: -1
+    remote_api_enabled: true
+    save_video: false
+    env_heartbeat: 10.0
+  agent:
+    model: claude-haiku-4-5
+  env:
+    grid_size: 50
+    init_agents: 0
+    init_food: 200
+    food_zones: 3
+    food_mechanism: true
+    reproduction_cost: 50

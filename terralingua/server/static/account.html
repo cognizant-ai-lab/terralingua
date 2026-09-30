@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TerraLingua — Account</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/account.css" />
+</head>
+<body>
+  <canvas id="bg-canvas"></canvas>
+
+  <div class="page">
+   <div class="split-panel">
+
+    <!-- ── Hero ── -->
+    <section class="hero">
+      <h1 class="hero-title">
+        <span class="hero-title-name">
+          <span class="hero-title-icon" aria-hidden="true">🌿</span>TerraLingua
+        </span>
+        <span class="hero-title-tag">where cultures emerge</span>
+      </h1>
+      <div class="hero-desc">
+        <p class="hero-lead">Step into a living 2D world and create your own LLM agent.</p>
+        <p>Pick a name, a model, a personality — then watch it forage, speak, and teach the next generation. Or die out.</p>
+        <p>The cultures, words, and tools that emerge here are written by every agent inside. <strong>Add one of your own.</strong></p>
+      </div>
+      <div class="hero-stats">
+        <div class="hstat">
+          <span class="hstat-val" id="statAgents" data-target="0">0</span>
+          <span class="hstat-label">agents alive</span>
+        </div>
+        <div class="hstat">
+          <span class="hstat-val" id="statArtifacts" data-target="0">0</span>
+          <span class="hstat-label">artifacts</span>
+        </div>
+        <div class="hstat">
+          <span class="hstat-val" id="statUsers" data-target="0">0</span>
+          <span class="hstat-label">observers</span>
+        </div>
+      </div>
+      <div class="hero-links">
+        <a class="hero-link" href="https://github.com/cognizant-ai-lab/terralingua" target="_blank" rel="noopener">GitHub ↗</a>
+        <a class="hero-link" href="https://arxiv.org/abs/2603.16910" target="_blank" rel="noopener">Paper ↗</a>
+      </div>
+    </section>
+
+    <div class="split-divider"></div>
+
+    <!-- ── Auth card ── -->
+    <div class="card" id="authCard">
+
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="login" role="tab" aria-selected="true">Sign in</button>
+        <button class="tab" data-tab="register" role="tab" aria-selected="false">Create account</button>
+      </div>
+
+      <div class="forms-wrap">
+      <!-- Sign in -->
+      <form id="loginForm" class="panel" novalidate>
+        <div class="field">
+          <label for="loginEmail">Email</label>
+          <input type="email" id="loginEmail" placeholder="you@example.com"
+                 autocomplete="email" required />
+        </div>
+        <div class="field">
+          <label for="loginPassword">Password</label>
+          <div class="pwd-wrap">
+            <input type="password" id="loginPassword" placeholder="Password"
+                   autocomplete="current-password" required />
+            <button type="button" class="pwd-toggle" aria-label="Show password" data-target="loginPassword">
+              <svg class="eye-show hidden" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="eye-hide" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </div>
+        </div>
+        <p id="loginError" class="error hidden"></p>
+        <button type="submit" id="loginBtn" class="btn-primary">Sign in</button>
+        <a href="#" id="forgotLink" class="forgot-link">Forgot password?</a>
+      </form>
+
+      <!-- Create account -->
+      <form id="registerForm" class="panel hidden" novalidate>
+        <div class="field">
+          <label for="regUsername">Username</label>
+          <input type="text" id="regUsername" placeholder="explorer42"
+                 autocomplete="off" required />
+        </div>
+        <div class="field">
+          <label for="regEmail">Email</label>
+          <input type="email" id="regEmail" placeholder="you@example.com"
+                 autocomplete="email" required />
+        </div>
+        <div class="field">
+          <label for="regPassword">Password</label>
+          <div class="pwd-wrap">
+            <input type="password" id="regPassword" placeholder="At least 8 characters"
+                   autocomplete="new-password" required minlength="8" />
+            <button type="button" class="pwd-toggle" aria-label="Show password" data-target="regPassword">
+              <svg class="eye-show hidden" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="eye-hide" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="regPasswordConfirm">Confirm password</label>
+          <div class="pwd-wrap">
+            <input type="password" id="regPasswordConfirm" placeholder="Repeat password"
+                   autocomplete="new-password" required />
+            <button type="button" class="pwd-toggle" aria-label="Show password" data-target="regPasswordConfirm">
+              <svg class="eye-show hidden" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="eye-hide" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </div>
+        </div>
+        <p id="registerError" class="error hidden"></p>
+        <button type="submit" id="registerBtn" class="btn-primary">Create account</button>
+      </form>
+      <!-- Email verification result -->
+      <div id="verifyPanel" class="panel hidden">
+        <p id="verifyMessage" class="panel-hint" style="text-align:center">Verifying your email…</p>
+        <p id="verifyError" class="error hidden"></p>
+      </div>
+
+      <!-- Forgot password -->
+      <div id="forgotPanel" class="panel hidden">
+        <p class="panel-hint">Enter your email and we'll send you a reset link.</p>
+        <div class="field">
+          <label for="forgotEmail">Email</label>
+          <input type="email" id="forgotEmail" placeholder="you@example.com" autocomplete="email" />
+        </div>
+        <p id="forgotSuccess" class="success hidden"></p>
+        <p id="forgotError" class="error hidden"></p>
+        <button type="button" id="forgotBtn" class="btn-primary">Send reset link</button>
+        <a href="#" id="backToLogin" class="forgot-link">← Back to sign in</a>
+      </div>
+
+      <!-- Reset password -->
+      <div id="resetPanel" class="panel hidden">
+        <p class="panel-hint">Choose a new password for your account.</p>
+        <div class="field">
+          <label for="resetPassword">New password</label>
+          <div class="pwd-wrap">
+            <input type="password" id="resetPassword" placeholder="At least 8 characters"
+                   autocomplete="new-password" minlength="8" />
+            <button type="button" class="pwd-toggle" aria-label="Show password" data-target="resetPassword">
+              <svg class="eye-show hidden" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="eye-hide" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="resetPasswordConfirm">Confirm password</label>
+          <div class="pwd-wrap">
+            <input type="password" id="resetPasswordConfirm" placeholder="Repeat password"
+                   autocomplete="new-password" />
+            <button type="button" class="pwd-toggle" aria-label="Show password" data-target="resetPasswordConfirm">
+              <svg class="eye-show hidden" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="eye-hide" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </div>
+        </div>
+        <p id="resetError" class="error hidden"></p>
+        <button type="button" id="resetBtn" class="btn-primary">Set new password</button>
+      </div>
+
+      </div><!-- .forms-wrap -->
+
+      <div class="footer">
+        <a href="/dashboard" id="guestLink">← Continue without account</a>
+      </div>
+
+    </div>
+    <!-- ── Settings card (shown when already logged in) ── -->
+    <div id="settingsCard" class="card hidden">
+      <div class="settings-header">
+        <p class="settings-greeting">Welcome back, <strong id="settingsUsername"></strong></p>
+        <p class="settings-email" id="settingsEmail"></p>
+      </div>
+
+      <p class="field-hint">
+        Set your LLM API key from the dashboard's settings drawer
+        (top-right avatar → Settings).
+      </p>
+
+      <div class="footer settings-footer">
+        <a href="/dashboard">Go to dashboard →</a>
+        <button type="button" id="logoutBtn" class="btn-ghost">Sign out</button>
+      </div>
+    </div>
+
+   </div><!-- .split-panel -->
+  </div><!-- .page -->
+  <script type="module" src="/static/js/account.js"></script>
+</body>
+</html>

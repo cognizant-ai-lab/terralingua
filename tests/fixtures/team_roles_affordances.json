@@ -1,0 +1,82 @@
+{
+    "founder": {
+        "affordances": [
+            {
+                "action": "remove_agent",
+                "mode": "add",
+                "description": "Permanently remove from the network an agent you are connected to.",
+                "params": {
+                    "target": "Name of an agent you are connected to and want to remove."
+                },
+                "effect": {
+                    "type": "remove_agent"
+                }
+            },
+            {
+                "action": "set_role",
+                "mode": "add",
+                "description": "Set the standing mandate of a role. Every current and future occupant of that role sees the mandate; it persists when occupants change.",
+                "params": {
+                    "target": "Name of the role whose mandate you set (e.g. 'planner').",
+                    "role": "Unused in roles mode; leave empty.",
+                    "motivation": "The standing mandate for the role's occupants (may be empty to clear it)."
+                },
+                "effect": {
+                    "type": "set_role"
+                }
+            },
+            {
+                "action": "grant_ability",
+                "mode": "add",
+                "description": "Grant an ability to an agent you are connected to.",
+                "params": {
+                    "target": "Name of an agent you are connected to.",
+                    "ability": "Ability to grant. One of: remove_agent, set_role, grant_ability, revoke_ability."
+                },
+                "effect": {
+                    "type": "grant_ability"
+                }
+            },
+            {
+                "action": "revoke_ability",
+                "mode": "add",
+                "description": "Revoke an ability from an agent you are connected to.",
+                "params": {
+                    "target": "Name of an agent you are connected to.",
+                    "ability": "Ability to revoke. One of: remove_agent, set_role, grant_ability, revoke_ability, or a standard action (e.g. follow, spawn, send_direct_message)."
+                },
+                "effect": {
+                    "type": "revoke_ability"
+                }
+            }
+        ]
+    },
+    "manager": {
+        "affordances": [
+            {
+                "action": "remove_agent",
+                "mode": "add",
+                "description": "Permanently remove from the network an agent you are connected to.",
+                "params": {
+                    "target": "Name of an agent you are connected to and want to remove."
+                },
+                "effect": {
+                    "type": "remove_agent"
+                }
+            },
+            {
+                "action": "set_role",
+                "mode": "add",
+                "description": "Set the standing mandate of a role. Every current and future occupant of that role sees the mandate; it persists when occupants change.",
+                "params": {
+                    "target": "Name of the role whose mandate you set (e.g. 'planner').",
+                    "role": "Unused in roles mode; leave empty.",
+                    "motivation": "The standing mandate for the role's occupants (may be empty to clear it)."
+                },
+                "effect": {
+                    "type": "set_role"
+                }
+            }
+        ]
+    }
+}

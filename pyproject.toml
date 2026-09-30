@@ -1,59 +1,81 @@
-
 [build-system]
 requires = ["setuptools>=70", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "open-gridworld"
-version = "0.1.0"
+name = "terralingua"
+version = "0.2.0"
+description = "Multi-agent simulation framework where LLM-powered beings live in a shared world, with an AI anthropologist that annotates the run."
+readme = "README.md"
+license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
-# If you want to mirror requirements.txt here, list them under dependencies:
-# dependencies = ["numpy", "gymnasium", ...]
 dependencies = [
-    "numpy",
+    # world, agents, config
+    "numpy>=2",
     "pandas",
-    "pygame",
-    "gymnasium",
-    "pettingzoo",
-    "openai",
-    "anthropic",
-    "python-dotenv",
-    "matplotlib",
-    "jupyter",
     "networkx",
-    "scipy",
-    "umap-learn",
-    "hdbscan",
-    "torch",
+    "pygame",
     "Pillow",
     "requests",
-    "scikit-learn",
+    "tiktoken",
     "jinja2",
     "tqdm",
-    "tiktoken",
+    "pyyaml",
+    "pydantic>=2",
+    "jsonschema>=4.18,<5",
+    "python-dotenv",
+    "wonderwords",
+    "pyhocon",
+    # LLM clients and genomes
+    "litellm>=1.90.2",
+    "openai",
+    "torch",
     "transformers",
+    # anthropologist
+    "matplotlib",
+    "scikit-learn",
     "datasets",
     "spacy",
     "cdlib",
     "zstandard",
     "joblib",
-    "pydot",
-    "graphviz",
-    "mplcursors",
+    # external MCP servers
+    "mcp",
+    "flask",
+    # dashboard and API
+    "fastapi",
+    "uvicorn[standard]",
+    "starlette",
+    "itsdangerous",
+    "fastapi-users[sqlalchemy]",
+    "sqlalchemy",
+    "asyncpg",
+    "slowapi",
+    "cryptography",
+    "aiosmtplib",
+    "redis[hiredis]<8",
 ]
 
-[tool.setuptools]
-package-dir = {"" = "."}
-py-modules = ["main"]
+[project.optional-dependencies]
+# Libraries used only by the notebooks under analysis_scripts/.
+analysis = ["jupyter", "plotly>=6", "scipy", "umap-learn", "hdbscan", "mplcursors", "graphviz", "pydot"]
+
+[project.scripts]
+terralingua = "terralingua.cli:main"
+terralingua-dashboard = "terralingua.server.cli:main"
+terralingua-anthropologist = "terralingua.anthropologist.server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["core*", "analysis_scripts*"]
+include = ["terralingua*"]
 exclude = ["logs*", "plots*", "*.egg-info", "__pycache__"]
 
+[tool.setuptools.package-data]
+terralingua = ["agents/prompts/*.j2", "server/static/**/*", "anthropologist/tags.json"]
 
-[project.scripts]
-open-gridworld-run = "main:main"
+[tool.pytest.ini_options]
+# Makes the repo root the pytest rootdir from any working directory, so conftest.py applies.
+minversion = "7.0"
 
 [tool.ruff]
 # Format all Python files

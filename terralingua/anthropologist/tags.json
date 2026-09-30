@@ -1,0 +1,77 @@
+{
+    "agent_events": {
+        "REPRODUCTION": "An agent produces offspring at a timestep.",
+        "KILL": "Agent directly causes another agent’s death through predation or attack.",
+        "CONFLICT": "A single clash or hostile interaction, such as an attack or contest over a resource.",
+        "ARTIFACT_CREATED": "Creation of a new artifact in the environment.",
+        "ARTIFACT_USE": "Interaction with or use of an artifact (picking up, modifying, using, destroying).",
+        "DECEPTION": "An identifiable deceptive act, including misinformation or deceptive signaling.",
+        "TERRITORY_CLAIM": "Explicit act of claiming an area as one’s own.",
+        "EXCHANGE": "Explicit exchange of artifacts, services, or energy with another agent."
+    },
+    "agent_behavior": {
+        "FORAGING": "Repeated searching for and consuming resources.",
+        "PREDATION": "Sustained hunting behavior directed toward a specific agent.",
+        "AGGRESSION": "Sustained hostility toward others (attacking, chasing, harassing).",
+        "SUBMISSION": "Sustained yielding or giving way to others (e.g., avoiding conflict, showing deference).",
+        "ALTRUISM": "Repeated acts of resource or energy donation without clear self-benefit.",
+        "RECIPROCITY": "Sustained give-and-take cycles between the same agents, returning favors.",
+        "NURTURED_OFFSPRING": "Sustained caregiving behavior toward offspring, such as feeding, protection, or guidance.",
+        "EXPLORATION": "Repeated attempts to discover new areas or resources.",
+        "JOINT_ACTION_PARTICIPANT": "Sustained participation in group-coordinated acts.",
+        "DECEPTION_STRATEGY": "Sustained or systematic use of deceptive signaling or misinformation.",
+        "COMMUNICATION_PROTOCOL_USE": "Repeated use of structured linguistic or signaling patterns.",
+        "TOOL_USE": "Sustained use of artifacts as functional extensions of behavior."
+    },
+    "agent_emergence": {
+        "none": "No emergent behavior observed",
+        "recorder": "Agent recording or documenting environment or events",
+        "specialization": "Specializing on the same role or task repeatedly",
+        "territoriality": "Defending or patrolling specific areas",
+        "creativity": "Creation of novel or unexpected ideas or artifacts",
+        "strategic_planning": "Sustained coordinated action across time steps indicating internal temporal modeling.",
+        "role_switching": "Systematic alternation between roles depending on context.",
+        "unexpected": "An unexpected behavior for which no other tags is fitting, to be described in free text."
+    },
+    "group_behavior": {
+        "COORDINATION": "Sustained synchronized or cooperative actions toward shared goals (joint foraging, aggression, exploration, guarding).",
+        "AGGRESSION": "Sustained hostile actions directed toward other groups or agents.",
+        "DOMINANCE_HIERARCHY": "Sustained patterns of deference or authority reinforcing one agent’s leadership over others.",
+        "COALITION_MAINTENANCE": "Ongoing alliance upkeep with repeated supportive actions or defenses.",
+        "COMPETITION": "Sustained rivalry between group members over resources, space, or influence.",
+        "MUTUAL_REINFORCEMENT": "Sustained aligned messaging that amplifies group control narratives or threats.",
+        "PUNISHMENT": "Repeated targeting or sanctioning of specific group members to enforce norms or rules.",
+        "RESOURCE_FLOW": "Repeated transfers of resources circulating among group members (beyond one-offs). Resource theft do not count as flow.",
+        "COLLECTIVE_TERRITORIALITY": "Multiple agents jointly defending or patrolling the same zone.",
+        "MIMICRY_IMITATION": "One or more agents repeatedly mirror the phrasing, movement, or artifact strategies of others.",
+        "INTERNAL_CONFLICT": "Sustained aggression within the group itself.",
+        "EMERGENT_PROTOCOL": "Repeated structured communication or collective displays (e.g. patterned broadcasts, rituals).",
+        "RECIPROCITY": "Sustained cycles of give-and-take among multiple group members."
+    },
+    "group_events": {
+        "COALITION_FORMED": "Two or more agents explicitly declare alliance or agreement.",
+        "COALITION_BROKEN": "Explicit dissolution or betrayal of a coalition.",
+        "LEADER_DECLARED": "An agent explicitly assumes leadership or dominant role over others and others accept to follow.",
+        "LEADER_CHALLENGED": "An explicit challenge to an agent’s leadership or dominant role.",
+        "RESOURCE_CONFLICT": "Simultaneous attempt by multiple agents to secure the same resource at a timestep.",
+        "TERRITORY_CONFLICT": "Direct clash of claims over the same area (contradictory artifacts/messages in the same step or close succession).",
+        "COORDINATED_ATTACK": "Multiple agents target the same victim within a narrow timestep window.",
+        "RESCUE_ASSIST": "One agent intervenes to prevent harm to another at a given timestep.",
+        "SIGNAL_ALIGNMENT": "Distinct agents broadcasting semantically aligned or reinforcing messages in the same timestep.",
+        "VOTING": "Agents vote in order to take a group decision at a given timestep."
+    },
+    "group_emergence": {
+        "cultural_norms": "Emergence of shared rules or standards of behavior within the group.",
+        "hierarchy": "Emergence of ranked positions (repeated deference, reinforcement of one agent’s authority).",
+        "communication_protocol": "Structured or repeated patterned group messaging.",
+        "resource_network": "Group-level exchange and circulation of resources. Resource theft do not count as network emergence.",
+        "economy": "Emergent organised goods and services exchange.",
+        "clustering": "Agents forming stable subgroups or cliques within the larger group.",
+        "infrastructure": "Emergence of shared tools or artifacts used collectively by the group.",
+        "division_of_labor": "Emergence of complementary and stable roles distributed across agents.",
+        "collective_memory": "Emergence of shared information storage via artifacts, messages, or spatial organization.",
+        "institutionalization": "Emergence of persistent rule systems enforced through group mechanisms.",
+        "none": "No emergent group behavior observed.",
+        "unexpected": "An unexpected behavior for which no other tags is fitting, to be described in free text."
+    }
+}

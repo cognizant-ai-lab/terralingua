@@ -1,6 +1,6 @@
 # TerraLingua
 
-**Paper:** [Link](https://www.researchgate.net/publication/402263491_TerraLingua_Emergence_and_Analysis_of_Open-endedness_in_LLM_Ecologies) - [ArXiv](https://arxiv.org/abs/2603.16910)
+**Paper:** [ResearchGate](https://www.researchgate.net/publication/402263491_TerraLingua_Emergence_and_Analysis_of_Open-endedness_in_LLM_Ecologies) · [arXiv](https://arxiv.org/abs/2603.16910)
 
 **Dataset:** https://huggingface.co/datasets/GPaolo/TerraLingua
 
@@ -10,116 +10,59 @@
 
 A multi-agent simulation framework for studying emergent behavior, artifact creation, and cultural evolution.
 
-LLM-powered agents (Claude or other models) interact in a shared 2D grid environment — foraging for resources, creating text artifacts, reproducing, and communicating — enabling research into how language-using agents develop social structure and culture over time.
+LLM-powered agents interact in a shared grid or graph world: they forage for resources, create text artifacts, reproduce, and communicate. This enables research into how language-using agents develop social structure and culture over time.
 
-After each experiment, the **AI Anthropologist** — itself an LLM agent — analyzes the simulation logs to annotate agent behaviors, infer group dynamics, classify artifacts, and trace cultural lineages, providing a qualitative and quantitative account of what emerged.
+The **AI Anthropologist**, itself an LLM agent, analyzes the simulation logs, during a run or after it, to annotate agent behaviors, infer group dynamics, classify artifacts, and trace cultural lineages. It gives a qualitative and quantitative account of what emerged.
 
-An overview of the TerraLingua system and of the AI-Anthropologist is shown in the figure below.
+The figure below shows the TerraLingua system and the AI Anthropologist.
 
 ![TerraLingua and the AI Anthropologist](assets/whole.png)
 
-
 ## Installation
 
-Requires **Python 3.13+**.
-
-Experiments that generate videos also require **ffmpeg**. On macOS, install it
-with [Homebrew](https://brew.sh/):
+Requires **Python 3.10+**. Runs that save videos also need **ffmpeg** (`brew install ffmpeg` on macOS, `apt install ffmpeg` on Debian and Ubuntu).
 
 ```bash
-brew install ffmpeg
+python -m venv .venv && source .venv/bin/activate     # or: conda create -n terralingua python=3.12 && conda activate terralingua
+pip install -e .                          # the package and the commands terralingua, terralingua-dashboard, terralingua-anthropologist
+pip install -e ".[analysis]"              # optional: the libraries the notebooks use
+python -m spacy download en_core_web_sm   # once: the anthropologist's artifact analysis needs it
 ```
 
-Verify that it is available on your `PATH`:
-
-```bash
-ffmpeg -version
-```
-
-**Using venv:**
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-**Using conda:**
-
-```bash
-conda create -n terralinguia python=3.13
-conda activate terralinguia
-pip install -r requirements.txt
-```
-
-Copy `.env.example` to `.env` and fill in your API key(s):
+Copy `.env.example` to `.env` and fill in your API key:
 
 ```bash
 cp .env.example .env
 ```
 
-## Running Experiments
+The dashboard, the live anthropologist, and the Docker demo are described in [docs/install_and_run.md](docs/install_and_run.md).
 
-Run directly with `main.py` using CLI flags:
+## Running the paper experiments
 
-```bash
-python main.py --exp_name my_experiment --init_agents 10 --max_ts 200 --model claude-haiku-4-5
-```
-
-Or use `run_experiment.sh`, a fully annotated template with all available options documented:
+Each experimental condition of the paper is a preset under [scenarios/paper/](scenarios/paper/). Run one from the repository root:
 
 ```bash
-bash run_experiment.sh
+terralingua paper_core
 ```
 
-Logs are written to `logs/<exp_name>/`.
+| Preset | Condition |
+|---|---|
+| `paper_core` | Baseline |
+| `paper_abundant` | Long history and food everywhere |
+| `paper_artifact_cost` | Creating an artifact costs energy |
+| `paper_creative` | Creative motivation text |
+| `paper_inert_artifacts` | Artifacts can be created but not read or used |
+| `paper_long_memory` | Long history |
+| `paper_no_motivation` | No motivation text |
+| `paper_no_personality` | No personality traits |
 
-### Reproducing paper experiments
+`paper_core` is the reference configuration of the paper. Logs are written to `logs/<exp_name>/`. The paper used `DeepSeek-R1-32` served locally with vLLM; pass `--model claude-haiku-4-5`, or another key from [docs/models.md](docs/models.md), to run with an API model. Any setting can be overridden on the command line, for example `terralingua paper_core --max_ts 500`. `terralingua --list` shows every preset and `terralingua --help` every setting; [template_preset.yaml](template_preset.yaml) lists every setting with its default and a comment, so copy the keys you change into a `<name>.preset.yaml`. See [docs/configuration.md](docs/configuration.md). [scenarios/paper/README.md](scenarios/paper/README.md) lists how the presets map to the original scripts.
 
-The `paper_experiment_scripts/` folder contains the exact scripts used to run each experiment from the paper. All scripts must be run from the project root:
+## Data analysis and visualization
 
-```bash
-bash paper_experiment_scripts/run_core.sh
-```
+The **AI Anthropologist** annotates agent behaviors, infers group dynamics, classifies artifacts, and traces cultural lineages. [analysis_scripts/AI_ANTHROPOLOGIST.md](analysis_scripts/AI_ANTHROPOLOGIST.md) describes the pipeline in detail. [docs/analysis.md](docs/analysis.md) describes what a run writes and how to run the anthropologist during a run.
 
-## Supported Agent Models
-
-Pass any of the following keys via `--model`:
-
-| Key | Provider | Notes |
-|---|---|---|
-| `claude-haiku-4-5` | Anthropic | Fast, cost-effective |
-| `claude-sonnet-4-6` | Anthropic | Default |
-| `o4-mini` | OpenAI | |
-| `o3-mini` | OpenAI | |
-| `gpt-5.1` | OpenAI | |
-| `gpt-5-mini` | OpenAI | |
-| `QWEN2.5` | Local (vLLM) | Qwen2.5-32B-Instruct |
-| `QWEN3` | Local (vLLM) | Qwen3-32B |
-| `DeepSeek-R1-32` | Local (vLLM) | DeepSeek-R1-Distill-Qwen-32B |
-| `DeepSeek-R1-70` | Local (vLLM) | DeepSeek-R1-Distill-Llama-70B |
-
-### Local models (vLLM)
-
-Local models require a running [vLLM](https://github.com/vllm-project/vllm) server. Start one (or more) on any of the default ports (`9000–9003`, `9010–9012`):
-
-```bash
-vllm serve Qwen/Qwen3-32B --port 9000
-```
-
-Then pass the ports via `--ports` (defaults to `9000 9001 9002 9003 9010 9011 9012`):
-
-```bash
-python main.py --model QWEN3 --ports 9000 9001
-```
-
-TerraLingua will auto-discover which ports are hosting the requested model and load-balance across them.
-
-## Data Analysis
-
-Analysis is performed by the **AI Anthropologist**, a post-hoc LLM-based framework that annotates agent behaviors, infers group dynamics, classifies artifacts, and traces cultural lineages. See [`analysis_scripts/AI_ANTHROPOLOGIST.md`](analysis_scripts/AI_ANTHROPOLOGIST.md) for a detailed description of the pipeline.
-
-Scripts follow a numbered order and must be run from the **project root** (they import from `core` and `analysis_scripts` as packages):
+The scripts follow a numbered order and run from the repository root. Set `EXPERIMENTS_NAMES` at the top of a script first.
 
 | Script | Description |
 |---|---|
@@ -129,14 +72,13 @@ Scripts follow a numbered order and must be run from the **project root** (they 
 | `004_artifact_analysis.py` | Compute artifact complexity metrics |
 | `005_artifact_classification.py` | Classify artifacts into behavioral categories |
 | `006_artifact_philogeny.py` | Analyze artifact genealogy and conceptual ancestry |
+| `007_anthropologist.py` | Run the whole pipeline over a finished run |
 
 ```bash
 python analysis_scripts/001_llm_agent_analyser.py
 ```
 
-## Data Visualization
-
-Notebooks in `analysis_scripts/notebooks/` mirror the analysis pipeline:
+Notebooks in `analysis_scripts/notebooks/` mirror the pipeline. They need the `analysis` extra.
 
 | Notebook | Description |
 |---|---|
@@ -152,6 +94,16 @@ Notebooks in `analysis_scripts/notebooks/` mirror the analysis pipeline:
 ```bash
 jupyter notebook analysis_scripts/notebooks/
 ```
+
+## Creating your own scenario
+
+A scenario allows you to run a specific setup in TerraLingua. It is one Python package with a few hooks, plus a preset. [docs/writing_a_scenario.md](docs/writing_a_scenario.md) is the guide, and [scenarios/example/](scenarios/example/) is a small complete scenario to copy:
+
+```bash
+terralingua example
+```
+
+Further guides: [external tools over MCP](docs/external_tools.md), [agent models](docs/models.md), [configuration](docs/configuration.md), [seeding a graph world from a Neuro-SAN network](docs/neuro_san_hocon.md), [social graph recordings and replay](docs/social_graph_replay.md).
 
 ## Citation
 

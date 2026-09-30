@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # Copyright © 2025 Cognizant Technology Solutions Corp, www.cognizant.com.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,23 +15,12 @@
 #
 # END COPYRIGHT
 
-from dotenv import load_dotenv
+"""Run a simulation. The code lives in terralingua.cli; this file is a shim.
 
-from core.experiment.cli import parse_args
-from core.experiment.config import build_config
-from core.experiment.runner import SimulationRunner
+    python main.py [preset] [--field val] ...   is the same as   terralingua [preset] [--field val] ...
+"""
 
-load_dotenv()
-
-
-def main():
-    args = parse_args()
-    params = build_config(args)
-
-    resume = args.resume
-    runner = SimulationRunner(params=params, resume=resume)
-    runner.run()
-
+from terralingua.cli import main
 
 if __name__ == "__main__":
     main()

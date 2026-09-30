@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TerraLingua</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/vendor/driver.css" />
+  <link rel="stylesheet" href="/static/dashboard.css" />
+</head>
+<body>
+
+<!-- Top bar -->
+<div id="topbar">
+  <div id="sseDot" class="connecting"></div>
+  <span id="sseStatus">Connecting…</span>
+  <h1>TerraLingua</h1>
+  <div class="badge" title="Total timesteps">⏱ <span id="stepVal">—</span></div>
+  <div class="badge" title="Agents: alive / total">⛬ <span id="agentCountVal">—</span> / <span id="agentTotalVal">—</span></div>
+  <div class="badge" title="Artifacts: active / total">◈ <span id="artCountVal">—</span> / <span id="artTotalVal">—</span></div>
+  <div class="badge" title="Connected users">
+    <svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    <span id="clientCountVal">—</span>
+  </div>
+  <button class="top-btn" id="snapshotBtn" title="Share a snapshot of this world">↗ Share world</button>
+  <div class="spacer"></div>
+  <div class="topbar-actions">
+    <div class="topbar-group">
+      <button class="top-btn" id="addAgentBtn">⛬ Add Agent</button>
+      <button class="top-btn" id="addArtifactBtn">◈ Add Artifact</button>
+    </div>
+    <button class="top-btn" id="anthropoBtn" title="Toggle anthropologist view">✦ Anthropologist</button>
+  </div>
+  <div id="userBadge"></div>
+</div>
+
+<!-- Main 3-column layout -->
+<div id="main">
+
+  <!-- Anthropologist left tray (covers #midCol) -->
+  <div class="col anthro-tray hidden" id="anthropoLeftTray">
+    <div class="section flex-section">
+      <div class="sec-header">
+        <span class="sec-title">All Agents Obituaries</span>
+      </div>
+      <div class="panel-search-bar">
+        <input type="text" class="panel-search-input" id="anthropoAgentSearch" placeholder="Search agents…" autocomplete="off" type="search" />
+      </div>
+      <div class="sec-body" id="anthropoAgentList">
+        <div class="empty-note">No agents yet.</div>
+      </div>
+    </div>
+    <div class="row-resize"></div>
+    <div class="section flex-section" id="anthropoDetailSection">
+      <div class="sec-header">
+        <span class="sec-title" id="anthropoDetailTitle">Select an agent</span>
+        <div class="flex-fill"></div>
+        <button class="toggle-btn snapshot-exclude" id="anthropoDetailSnapshotBtn" title="Share this agent's annotation">↗ Share</button>
+      </div>
+      <div class="sec-body" id="anthropoDetailBody">
+        <div class="empty-note">Click an agent to see their annotation.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Col 1: Roster + Agent detail -->
+  <div class="col" id="midCol">
+
+    <!-- Roster -->
+    <div class="section" id="rosterSection">
+      <div class="sec-header">
+        <span class="sec-title">Agents</span>
+        <div class="btn-row">
+          <button class="toggle-btn" id="killAllBtn" style="display:none;">✕ Kill Mine</button>
+          <button class="toggle-btn" id="showDeadBtn" title="Show dead agents">Dead</button>
+          <div class="seg-toggle" id="filterSeg">
+            <button class="toggle-btn on" id="filterAllBtn" title="Show all agents">All</button>
+            <button class="toggle-btn" id="filterMineBtn" title="Show only your agents">Mine</button>
+          </div>
+        </div>
+      </div>
+      <div class="panel-search-bar">
+        <input type="text" class="panel-search-input" id="rosterSearch" placeholder="Search agents…" autocomplete="off" type="search" />
+      </div>
+      <div class="sec-body" id="rosterList">
+        <div class="empty-note">Waiting for simulation…</div>
+      </div>
+    </div>
+
+    <div class="row-resize"></div>
+
+    <div id="midLower">
+
+    <!-- Agent detail -->
+    <div class="section" id="followSection">
+      <div class="sec-header">
+        <span class="sec-title" id="followTitle">Following — none</span>
+        <div style="display:flex;flex-direction:row;align-items:center;gap:0.4rem;flex-shrink:0;">
+          <button class="toggle-btn snapshot-exclude" id="followSnapshotBtn" title="Share this agent's details" style="display:none;">↗</button>
+          <button class="toggle-btn" id="followCloseBtn" title="Close" style="display:none;">✕</button>
+        </div>
+      </div>
+      <div class="empty-note" id="followEmpty">Click an agent to follow it.</div>
+      <div id="followDetail" style="display:none;">
+        <div id="followTop">
+          <div class="fstats">
+            <div class="fstat"><div class="fstat-label">Energy</div><div class="fstat-value" id="fEnergy">—</div></div>
+            <div class="fstat"><div class="fstat-label">Time left</div><div class="fstat-value" id="fTime">—</div></div>
+            <div class="fstat"><div class="fstat-label">Type</div><div class="fstat-value" id="fType">—</div></div>
+            <button class="toggle-btn" id="traitsBtn" style="display:none;margin-left:auto;">Traits</button>
+            <button class="toggle-btn" id="familyBtn" style="display:none;">Family</button>
+            <button class="toggle-btn" id="analysisBtn" style="display:none;">Analysis</button>
+            <div id="followAgentBtns" style="display:none;">
+              <button class="follow-agent-btn" id="followEditBtn" title="Edit agent">✎</button>
+              <button class="follow-agent-btn" id="followKillBtn" title="Kill agent">■</button>
+            </div>
+          </div>
+        </div>
+        <div id="fTraitsPanel" style="display:none;">
+          <div id="fMotivation" class="detail-block" style="display:none;">
+            <div class="detail-label">Motivation</div>
+            <div class="detail-motivation" id="fMotivationText"></div>
+          </div>
+          <div id="fGenome" class="detail-block" style="display:none;">
+            <div class="detail-label">Genotype</div>
+            <div id="fGenomeText"></div>
+          </div>
+        </div>
+        <div id="humanControlBody" style="display:none;"></div>
+        <div class="sec-body">
+          <div id="historyList"></div>
+        </div>
+      </div>
+    </div>
+
+    </div><!-- #midLower -->
+
+  </div>
+
+  <div class="col-resize"></div>
+
+  <!-- Col 2: Grid -->
+  <div class="col" id="gridCol">
+    <details id="graphReplayPane" class="graph-replay" tabindex="0">
+      <summary>Graph replay <span id="graphReplayMode">Live graph</span></summary>
+      <div class="graph-replay-row">
+        <button class="toggle-btn" id="graphReplayLoad">Load current run</button>
+        <button class="toggle-btn" id="graphReplayOpen">Open recording</button>
+        <button class="toggle-btn" id="graphReplaySave" disabled>Save recording</button>
+        <input id="graphReplayFile" type="file" accept=".jsonl,.ndjson" hidden />
+      </div>
+      <p id="graphReplayNote">Load a recording to inspect each step.</p>
+      <div class="graph-replay-row">
+        <button class="toggle-btn" id="graphReplayPrev" aria-label="Previous recorded step" disabled>←</button>
+        <button class="toggle-btn" id="graphReplayPlay" disabled>Play</button>
+        <button class="toggle-btn" id="graphReplayNext" aria-label="Next recorded step" disabled>→</button>
+        <label>Speed <select id="graphReplaySpeed" aria-label="Playback steps per second">
+          <option value="0.5">0.5 steps/s</option><option value="1">1 step/s</option>
+          <option value="2" selected>2 steps/s</option><option value="5">5 steps/s</option><option value="10">10 steps/s</option>
+        </select></label>
+        <button class="toggle-btn" id="graphReplayLive" disabled>Live</button>
+        <button class="toggle-btn" id="graphReplayExport" disabled>Export video</button>
+      </div>
+      <input id="graphReplaySeek" type="range" min="0" max="0" value="0" aria-label="Recorded snapshot" disabled />
+      <div id="graphReplayStep">No recording loaded.</div>
+      <div id="graphReplayCounts"></div>
+      <div id="graphReplayChanges"></div>
+      <div id="graphReplayNode">Click a node for its recorded details.</div>
+      <div id="graphReplayStatus" role="status" aria-live="polite"></div>
+    </details>
+    <div class="sec-body" style="overflow:hidden;">
+      <div id="gridWrap">
+        <div id="gridContent">
+          <div id="pickBanner" class="pick-banner hidden"></div>
+          <div id="canvasOuter">
+            <canvas id="grid-canvas" width="600" height="600"></canvas>
+            <div id="zoomControls">
+              <button id="zoomInBtn"    class="toggle-btn" title="Zoom in">+</button>
+              <button id="zoomOutBtn"   class="toggle-btn" title="Zoom out">−</button>
+              <button id="zoomResetBtn" class="toggle-btn" title="Reset zoom &amp; pan">⊙</button>
+            </div>
+          </div>
+          <div id="gridLegend">
+            <span class="legend-item"><span class="legend-swatch legend-agent"></span>Agent</span>
+            <span class="legend-item"><span class="legend-swatch legend-food"></span>Food</span>
+            <span class="legend-item"><span class="legend-swatch legend-artifact"></span>Artifact</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-resize"></div>
+
+  <!-- Anthropologist right tray (covers #rightCol) -->
+  <div class="col anthro-tray hidden" id="anthropoRightTray">
+    <div class="section flex-section" id="fieldNotesTraySection">
+      <div class="sec-header">
+        <span class="sec-title">Field Notes</span>
+        <div class="flex-fill"></div>
+        <button class="toggle-btn snapshot-exclude" id="fieldNotesTraySnapshotBtn" title="Share the Field Notes panel">↗ Share</button>
+      </div>
+      <div class="fn-filter-inline-bar">
+        <span class="fn-filter-label">severity</span>
+        <div class="fn-filter-bar" id="fnFilterBarTray">
+          <button class="fn-fb-btn" data-sev="0">low</button>
+          <button class="fn-fb-btn fn-fb-on" data-sev="1">med</button>
+          <button class="fn-fb-btn fn-fb-on" data-sev="2">high</button>
+        </div>
+      </div>
+      <div class="panel-search-bar">
+        <input type="text" class="panel-search-input" id="fnSearchInputTray" placeholder="Search field notes…" autocomplete="off" type="search" />
+      </div>
+      <div class="sec-body" id="fieldNotesList">
+        <div class="empty-note">No field notes yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Col 3: Artifacts + Messages -->
+  <div class="col" id="rightCol">
+
+    <!-- Artifacts -->
+    <div class="section" id="artifactSection">
+      <div class="sec-header">
+        <span class="sec-title">Artifacts</span>
+        <span class="sec-title" id="artCountBadge" style="color:var(--text);margin-left:0.35rem;"></span>
+        <button class="toggle-btn" id="showExpiredBtn" title="Show expired artifacts" style="margin-left:0.5rem;">Expired</button>
+      </div>
+      <div class="panel-search-bar">
+        <input type="text" class="panel-search-input" id="artSearch" placeholder="Search artifacts…" autocomplete="off" type="search" />
+      </div>
+      <div class="sec-body" id="artifactList">
+        <div class="empty-note">No artifacts yet.</div>
+      </div>
+    </div>
+
+    <div class="row-resize"></div>
+
+    <!-- Messages / Field Notes -->
+    <div class="section" id="msgSection">
+      <div class="sec-header" id="msgHeader">
+        <div class="seg-toggle" id="msgModeSeg">
+          <button class="toggle-btn on" id="msgModeMessagesBtn" title="Show messages">❖ Messages</button>
+          <button class="toggle-btn" id="msgModeNotesBtn" title="Show field notes">✦ Field Notes <span id="fieldNotesBadge" class="topbar-badge hidden">0</span></button>
+        </div>
+        <div class="flex-fill"></div>
+        <button class="toggle-btn snapshot-exclude" id="snapshotMsgBtn" title="Share messages">↗ Share</button>
+      </div>
+      <div id="fnFilterInline" class="fn-filter-inline-bar hidden">
+        <span class="fn-filter-label">severity</span>
+        <div class="fn-filter-bar" id="fnFilterBarInline">
+          <button class="fn-fb-btn" data-sev="0">low</button>
+          <button class="fn-fb-btn fn-fb-on" data-sev="1">med</button>
+          <button class="fn-fb-btn fn-fb-on" data-sev="2">high</button>
+        </div>
+      </div>
+      <div id="fnSearchInline" class="panel-search-bar hidden snapshot-exclude">
+        <input type="text" class="panel-search-input" id="fnSearchInputInline" placeholder="Search field notes…" autocomplete="off" type="search" />
+      </div>
+      <div class="sec-body">
+        <div id="msgList"></div>
+        <div id="fieldNotesListInline" class="hidden"></div>
+      </div>
+    </div>
+
+    <!-- Artifact detail (shown instead of messages when an artifact is selected) -->
+    <div class="section" id="artDetailSection">
+      <div class="sec-header">
+        <span class="sec-title" id="artDetailTitle">Artifact</span>
+        <div class="flex-fill"></div>
+        <div style="display:flex;flex-direction:row;align-items:center;gap:0.4rem;flex-shrink:0;">
+          <button class="toggle-btn" id="artPhyloBtn" style="display:none;">Phylogeny</button>
+          <button class="toggle-btn" id="artSnapshotBtn" title="Share this artifact" style="display:none;">↗</button>
+          <button class="follow-agent-btn" id="artDetailEditBtn" title="Edit artifact" style="display:none;">✎</button>
+          <button class="follow-agent-btn" id="artDetailDeleteBtn" title="Delete artifact" style="display:none;">⌫</button>
+          <button class="toggle-btn" id="artDetailCloseBtn" title="Close">✕</button>
+        </div>
+      </div>
+      <div class="sec-body" id="artDetailBody"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Add-agent drawer -->
+<div id="drawer">
+  <h2>Connect an Agent</h2>
+  <div id="dTypeToggle" style="display:flex;gap:0.5rem;margin-bottom:0.75rem;">
+    <button class="type-btn active" id="dTypeLLM">LLM Agent</button>
+    <button class="type-btn" id="dTypeHuman">Human Agent</button>
+  </div>
+  <label>Agent name <span class="req">*</span></label>
+  <div class="form-row">
+    <input id="dName" type="text" placeholder="Explorer" class="flex-fill" autocomplete="one-time-code" />
+    <button id="dNameRefreshBtn" class="toggle-btn" style="flex-shrink:0;" title="Suggest a random name">↺</button>
+  </div>
+  <div id="dLLMFields">
+  <label>Motivational prompt</label>
+  <textarea id="dMotivation" autocomplete="one-time-code"></textarea>
+  <label>Model <span class="req">*</span></label>
+  <select id="dModel"></select>
+  <div id="dProviderError" class="art-drawer-status error" style="display:none;margin-top:0.4rem;"></div>
+  <div id="dApiKeyRow">
+  <label>API key <span class="req">*</span></label>
+  <input id="dApiKey" type="password" placeholder="sk-... or sk-ant-..." autocomplete="new-password" />
+  <p class="key-note">Your key is sent encrypted per-request and never stored on the server.</p>
+  </div>
+  </div>
+  <label>Spawn position <span style="color:var(--muted);font-weight:400;">(random if blank)</span></label>
+  <div class="form-row">
+    <input id="dRow" type="number" min="0" placeholder="Row" class="flex-fill" />
+    <input id="dCol" type="number" min="0" placeholder="Col" class="flex-fill" />
+    <button id="agentPickBtn" class="toggle-btn no-shrink-nowrap">⊕ Pick</button>
+  </div>
+  <div id="agentPickHint" style="font-size:0.72rem;color:var(--accent);margin-top:0.3rem;display:none;">Click a cell on the grid…</div>
+  <div id="dGenomeFields">
+  <div class="genome-section-hdr">
+    <label>Genotype</label>
+    <button id="dGenomeRandomBtn" class="toggle-btn" style="display:none;">↺ Randomize</button>
+  </div>
+  <select id="dGenomeType" style="margin-bottom:0.4rem;">
+    <option value="no_traits">No traits</option>
+    <option value="sentence_mutate">Sentence (mutating)</option>
+    <option value="sentence_directed">Sentence (parent-directed)</option>
+    <option value="ocean_5">OCEAN personality</option>
+  </select>
+  <div id="dGenomeSection"></div>
+  </div>
+  <div class="genome-section-hdr" style="margin-top:0.75rem;">
+    <label style="margin:0;">Allowed actions</label>
+    <div class="btn-row">
+      <button id="dActionsAllBtn" class="toggle-btn">All</button>
+      <button id="dActionsNoneBtn" class="toggle-btn">None</button>
+    </div>
+  </div>
+  <div id="dActionsSection"><p class="hint-small">Loading…</p></div>
+  <div class="drawer-btns">
+    <button id="drawerCancelBtn">Cancel</button>
+    <button id="drawerConnectBtn">Connect</button>
+  </div>
+  <div id="drawerStatus" class="art-drawer-status"></div>
+</div>
+
+<!-- Add-artifact drawer -->
+<div id="artDrawer">
+  <h2 id="artDrawerTitle">◈ Add Artifact</h2>
+  <label class="art-create-only">Name <span class="req">*</span></label>
+  <input id="aName" type="text" placeholder="my_note" class="art-create-only" />
+  <label>Content</label>
+  <textarea id="aPayload" placeholder="Text content of the artifact…"></textarea>
+  <label class="art-create-only">Position</label>
+  <div class="art-create-only form-row">
+    <input id="aRow" type="number" min="0" value="0" placeholder="Row" class="flex-fill" />
+    <input id="aCol" type="number" min="0" value="0" placeholder="Col" class="flex-fill" />
+    <button id="artPickBtn" class="toggle-btn no-shrink-nowrap">⊕ Pick</button>
+  </div>
+  <div id="artPickHint" class="art-create-only" style="font-size:0.72rem;color:var(--amber);margin-top:0.3rem;display:none;">Click a cell on the grid…</div>
+  <label>Lifespan (steps, -1 = infinite)</label>
+  <input id="aLifespan" type="number" value="-1" />
+  <label class="art-create-only">Placement</label>
+  <div class="art-create-only" style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.4rem;">
+    <input id="aMovable" type="checkbox" checked style="width:auto;" />
+    <span style="font-size:0.85rem;">Movable (agents can pick it up)</span>
+  </div>
+  <div class="drawer-btns">
+    <button id="artDrawerCancelBtn">Cancel</button>
+    <button id="artDrawerCreateBtn" style="background:#fb923c;color:#fff;">Create</button>
+  </div>
+  <div id="artDrawerStatus"></div>
+</div>
+
+<!-- Edit-agent drawer -->
+<div id="editDrawer">
+  <h2 id="editDrawerTitle">✎ Edit Agent</h2>
+  <label>Motivational prompt <span style="font-weight:400;opacity:0.6;">(optional)</span></label>
+  <textarea id="eMotivation" style="min-height:90px;"></textarea>
+  <div class="genome-section-hdr" style="margin-top:0.75rem;">
+    <label style="margin:0;">Genotype</label>
+    <button id="eGenomeRandomBtn" class="toggle-btn" style="display:none;">↺ Randomize</button>
+  </div>
+  <select id="eGenomeType" style="margin-bottom:0.4rem;">
+    <option value="no_traits">No traits</option>
+    <option value="sentence_mutate">Sentence (mutating)</option>
+    <option value="sentence_directed">Sentence (parent-directed)</option>
+    <option value="ocean_5">OCEAN personality</option>
+  </select>
+  <div id="eGenomeSection"></div>
+  <div class="genome-section-hdr" style="margin-top:0.75rem;">
+    <label style="margin:0;">Allowed actions</label>
+    <div class="btn-row">
+      <button id="eActionsAllBtn" class="toggle-btn">All</button>
+      <button id="eActionsNoneBtn" class="toggle-btn">None</button>
+    </div>
+  </div>
+  <div id="eActionsSection"><p class="hint-small">Loading…</p></div>
+  <div class="drawer-btns">
+    <button id="editDrawerCancelBtn">Cancel</button>
+    <button id="editDrawerSaveBtn" style="background:var(--accent);color:#fff;">Save</button>
+  </div>
+  <div id="editDrawerStatus" class="art-drawer-status"></div>
+</div>
+
+<!-- Settings / menu drawer -->
+<div id="settingsDrawer">
+
+  <!-- ── Account ── -->
+  <p class="sd-label">Account</p>
+
+  <div id="sdSignedIn" class="hidden">
+    <div class="sd-profile">
+      <div class="sd-avatar" id="sdAvatar"></div>
+      <div class="sd-profile-text">
+        <span class="sd-name" id="sdUsername"></span>
+        <span class="sd-email" id="sdEmail"></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="sdSignedOut" class="hidden">
+    <div class="sd-profile">
+      <div class="sd-avatar sd-avatar--guest">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </div>
+      <div class="sd-profile-text">
+        <span class="sd-name">Not signed in</span>
+        <span class="sd-email">Sign in to manage your agents</span>
+      </div>
+    </div>
+    <button id="sdSignInBtn" class="sd-btn sd-btn--primary" style="margin-top:0.6rem;">Sign in / Register</button>
+  </div>
+
+  <div class="sd-sep"></div>
+
+  <!-- ── LLM API Key ── -->
+  <p class="sd-label">LLM API Key</p>
+
+  <div id="sdApiKeySignedIn" class="hidden">
+    <div class="sd-input-wrap">
+      <input id="sdApiKey" type="password" placeholder="Paste Anthropic or OpenAI key…" autocomplete="off" />
+      <button id="sdApiKeyToggle" class="sd-eye-btn" type="button" aria-label="Toggle visibility">
+        <svg class="sd-eye-show" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        <svg class="sd-eye-hide hidden" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+      </button>
+    </div>
+    <p id="sdApiKeyHint" class="sd-hint"></p>
+    <div id="sdStatus" class="sd-status"></div>
+    <button id="sdSaveBtn" class="sd-btn sd-btn--primary">Save API key</button>
+  </div>
+
+  <div id="sdApiKeySignedOut" class="hidden">
+    <div class="sd-input-wrap">
+      <input id="sdAnonApiKey" type="password" placeholder="Paste Anthropic or OpenAI key…" autocomplete="off" />
+      <button id="sdAnonApiKeyToggle" class="sd-eye-btn" type="button" aria-label="Toggle visibility">
+        <svg class="sd-anon-eye-show" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        <svg class="sd-anon-eye-hide hidden" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+      </button>
+    </div>
+    <p class="sd-hint">Key is held only for this browser session. Sign in to store one permanently.</p>
+    <div id="sdAnonStatus" class="sd-status"></div>
+    <button id="sdAnonSaveBtn" class="sd-btn sd-btn--primary">Save API key</button>
+  </div>
+
+  <div class="sd-sep"></div>
+
+  <!-- ── Display ── -->
+  <p class="sd-label">Display</p>
+  <div class="sd-pref-list">
+    <button class="sd-pref-item" id="namesBtn">
+      <span class="sd-pref-lhs">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Agent names
+      </span>
+      <span class="sd-pref-state" id="namesBtnState">OFF</span>
+    </button>
+    <button class="sd-pref-item" id="themeBtn">
+      <span class="sd-pref-lhs">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        Theme
+      </span>
+      <span class="sd-pref-state" id="themeBtnState">Dark</span>
+    </button>
+    <button class="sd-pref-item" id="replayTutorialBtn" title="Walk through the dashboard again">
+      <span class="sd-pref-lhs">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Replay tutorial
+      </span>
+      <span class="sd-pref-state">→</span>
+    </button>
+    <button class="sd-pref-item" id="configBtn" title="Show simulation config">
+      <span class="sd-pref-lhs">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Show world config
+      </span>
+      <span class="sd-pref-state">→</span>
+    </button>
+  </div>
+
+  <div class="sd-sep"></div>
+
+  <!-- Feedback (always visible, styled like the pwd-reset ghost button) -->
+  <a id="feedbackBtn" class="sd-btn sd-btn--ghost"
+     href="https://github.com/cognizant-ai-lab/terralingua/issues/new?labels=feedback"
+     target="_blank" rel="noopener noreferrer"
+     title="Share feedback or report a bug — opens a GitHub issue">Help shape TerraLingua</a>
+
+  <!-- ── Account actions footer (only when signed in) ── -->
+  <div id="sdSignedInFooter" class="hidden">
+    <button id="sdChangePwdBtn" class="sd-btn sd-btn--ghost">Send password reset link</button>
+    <p id="sdPwdMsg" class="sd-hint" style="min-height:1.1rem;margin-top:0.35rem;margin-bottom:0.6rem;"></p>
+    <button id="sdLogoutBtn" class="sd-btn sd-btn--danger">Sign out</button>
+  </div>
+
+</div>
+
+<div id="cellTooltip"></div>
+
+<!-- Auth modal -->
+
+<script src="/static/vendor/driver.js.iife.js"></script>
+<script type="module" src="/static/dashboard.js"></script>
+</body>
+</html>

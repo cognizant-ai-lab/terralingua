@@ -1,0 +1,31 @@
+# A small complete scenario to copy. Run it from the repo root, the folder that holds
+# the scenarios package:
+#   terralingua example
+name: example
+description: "Example scenario: periodic storms, a shelter action, and a watcher persona."
+config:
+  run:
+    scenario: scenarios.example
+    scenario_options:
+      period: 5
+      duration: 2
+      radius: 2
+      damage: 3
+      shelter_cost: 5
+      watchers: 1
+    exp_name: example
+    max_ts: 30
+    seed: 1
+    save_video: false
+  agent:
+    scenario_specific_instructions: instructions.md
+  env:
+    world_type: grid
+    grid_size: 15
+    init_agents: 4
+    min_agents: 0
+    init_agent_energy: 60
+    init_food: 40
+    food_zones: 1
+    vision_radius: 4
+    reproduction_cost: -1
