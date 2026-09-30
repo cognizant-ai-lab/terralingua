@@ -178,7 +178,7 @@ function renderActionChips(){
   const sec = document.getElementById("dActionsSection");
   if(!state.actionsInfo.length){ sec.innerHTML=""; return; }
   sec.innerHTML = `<div class="action-chips">${
-    state.actionsInfo.map(a=>`<span class="action-chip on" data-action="${escHtml(a.name)}" title="${escHtml(a.description)}">${a.name.replace(/_/g," ")}</span>`).join("")
+    state.actionsInfo.map(a=>`<span class="action-chip on" data-action="${escHtml(a.name)}" title="${escHtml(a.description)}">${escHtml(a.name.replace(/_/g," "))}</span>`).join("")
   }</div>`;
   sec.querySelectorAll(".action-chip").forEach(chip=>{
     chip.addEventListener("click",()=>chip.classList.toggle("on"));
@@ -615,7 +615,7 @@ function renderEditActionChips(excludedActions){
   if(!state.actionsInfo.length){ sec.innerHTML=""; return; }
   const excluded=new Set(excludedActions||[]);
   sec.innerHTML=`<div class="action-chips">${
-    state.actionsInfo.map(a=>`<span class="action-chip${excluded.has(a.name)?"":" on"}" data-action="${escHtml(a.name)}" title="${escHtml(a.description)}">${a.name.replace(/_/g," ")}</span>`).join("")
+    state.actionsInfo.map(a=>`<span class="action-chip${excluded.has(a.name)?"":" on"}" data-action="${escHtml(a.name)}" title="${escHtml(a.description)}">${escHtml(a.name.replace(/_/g," "))}</span>`).join("")
   }</div>`;
   sec.querySelectorAll(".action-chip").forEach(chip=>{
     chip.addEventListener("click",()=>chip.classList.toggle("on"));

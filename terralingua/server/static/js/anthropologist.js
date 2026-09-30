@@ -463,7 +463,7 @@ function _renderFieldNotes() {
   if (!visible.length) {
     let msg;
     if (_sevFilter.size === 0)  msg = 'No severities selected — pick low / med / high above to show notes.';
-    else if (fnQ)               msg = `No notes match "${fnQ}".`;
+    else if (fnQ)               msg = `No notes match "${_esc(fnQ)}".`;
     else                        msg = 'No notes match the current filter.';
     container.innerHTML = `<div class="empty-note">${msg}</div>`;
     return;

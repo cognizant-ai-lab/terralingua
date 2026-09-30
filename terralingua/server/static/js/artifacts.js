@@ -117,7 +117,7 @@ export function renderArtifacts(artifacts, expiredArtifacts=[]){
 
   const hasAny = artifacts.length || expiredArtifacts.length;
   if(!hasAny){
-    list.innerHTML=`<div class="empty-note">${q ? `No artifacts match "${q}".` : 'No artifacts yet.'}</div>`;
+    list.innerHTML=`<div class="empty-note">${q ? `No artifacts match "${escHtml(q)}".` : 'No artifacts yet.'}</div>`;
     artifactRowCache.clear(); expiredArtRowCache.clear(); return;
   }
   if(artifactRowCache.size===0 && expiredArtRowCache.size===0) list.innerHTML="";

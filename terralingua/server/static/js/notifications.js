@@ -1,3 +1,5 @@
+import { escHtml } from './state.js';
+
 const _STYLE = `
 #ogw-error-notice{position:fixed;bottom:1rem;right:1rem;z-index:9000;background:rgba(239,68,68,0.10);border:1px solid rgba(248,113,113,0.30);color:#f87171;border-radius:8px;padding:0.6rem 0.9rem;font-size:0.8rem;line-height:1.7;max-width:360px;display:none;}
 #ogw-error-notice .ogw-err-title{font-weight:600;margin-bottom:0.15rem;}
@@ -35,7 +37,7 @@ export function flushStepErrors() {
   _init();
   if (_buffer.size === 0) { _el.style.display = "none"; return; }
   const lines = [..._buffer.values()]
-    .map(({ rawMessage, agents }) => `<div>• ${rawMessage} — ${[...agents].join(", ")}</div>`)
+    .map(({ rawMessage, agents }) => `<div>• ${escHtml(rawMessage)} — ${[...agents].map(escHtml).join(", ")}</div>`)
     .join("");
   _el.innerHTML = `<div class="ogw-err-title">⚠ Agent errors</div>${lines}`;
   _el.style.display = "";

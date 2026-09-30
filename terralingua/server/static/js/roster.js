@@ -1,4 +1,4 @@
-import { state, rosterRowCache, deadAgentRowCache, familyTags, agentHistory } from './state.js';
+import { state, escHtml, rosterRowCache, deadAgentRowCache, familyTags, agentHistory } from './state.js';
 import { agentStore } from './agents.js';
 import { drawGrid } from './grid.js';
 import { renderMessages } from './messages.js';
@@ -26,7 +26,7 @@ export function renderRoster(agents, onSelect, deadAgents=[]) {
   ) : visible;
   const filteredDead = q ? deadAgents.filter(a => a.name.toLowerCase().includes(q)) : deadAgents;
   if (!filteredVisible.length && !filteredDead.length) {
-    list.innerHTML=`<div class="empty-note">${q ? `No agents match "${q}".` : state.filterMine?"No agents connected from this tab.":"No agents in simulation."}</div>`;
+    list.innerHTML=`<div class="empty-note">${q ? `No agents match "${escHtml(q)}".` : state.filterMine?"No agents connected from this tab.":"No agents in simulation."}</div>`;
     rosterRowCache.clear(); deadAgentRowCache.clear(); return;
   }
   // Clear any static HTML placeholder on the first real render
