@@ -196,7 +196,7 @@ def _agent_vitals(agent_tag: str, exp_path: Path) -> dict:
 
 load_dotenv(find_dotenv(usecwd=True), override=True)
 DASHBOARD_PASSWORD: str | None = os.environ.get("DASHBOARD_PASSWORD") or None
-# Randomised per api_server invocation so that restarting invalidates existing
+# Randomised per dashboard server invocation so that restarting invalidates existing
 # gate cookies. In multi-worker mode the parent seeds OGW_GATE_NONCE before
 # forking so every worker validates the same cookie.
 _GATE_NONCE: str = os.environ.get("OGW_GATE_NONCE") or secrets.token_hex(32)
@@ -668,7 +668,7 @@ def create_app(
         model: str,
         anon_id: str | None = None,
     ) -> None:
-        """Drive an agent's obs→LLM→action cycle from the api_server process.
+        """Drive an agent's obs→LLM→action cycle from the dashboard server process.
 
         anon_id (optional): if set, the loop polls key_anon_alive(anon_id) every
         ANON_HEARTBEAT_TTL/3 seconds and exits when it expires (browser closed).
@@ -861,7 +861,7 @@ def create_app(
             return False
         if user_id is not None:
             # Logged-in: persist forever so the lifespan resume scan can
-            # re-spawn after api_server restart (key decryptable from DB).
+            # re-spawn after a dashboard server restart (key decryptable from DB).
             await state.redis.set(
                 f"ogw:bg:{agent_tag}",
                 json.dumps({"user_id": user_id, "model": model}),
@@ -1741,7 +1741,7 @@ def create_app(
         # In the unified design only human-controlled agents open this WS — LLM
         # agents are driven entirely by server_llm_loop subscribed to Redis. So
         # no bg-loop restart logic is needed here; the lifespan resume scan
-        # already re-spawns persisted (logged-in) loops on api_server boot.
+        # already re-spawns persisted (logged-in) loops on dashboard server boot.
 
         async def obs_forwarder():
             backoff = 1.0

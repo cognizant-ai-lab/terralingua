@@ -161,7 +161,7 @@ def test_free_dictionary_values_are_preserved_as_atomic_parameters():
 def test_inspection_import_does_not_load_runner_or_dotenv():
     script = (
         "import sys; from terralingua.config.inspection import describe; describe(); "
-        "assert 'main' not in sys.modules; "
+        "assert 'terralingua.cli' not in sys.modules; "
         "assert 'terralingua.experiment.runner' not in sys.modules; "
         "assert 'terralingua.external.request_manager' not in sys.modules"
     )

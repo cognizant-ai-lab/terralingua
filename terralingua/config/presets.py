@@ -263,7 +263,7 @@ def get_preset(name: str) -> dict[str, Any]:
 
 
 def list_presets(root: str | Path | None = None) -> list[tuple[str, str, str]]:
-    """[(name, description, location), ...] sorted by name — powers `main.py --list`.
+    """[(name, description, location), ...] sorted by name — powers `terralingua --list`.
 
     With no root: built-in presets (location ``(built-in)``) plus every preset
     file discovered under the working directory. With a root: only presets found under it.

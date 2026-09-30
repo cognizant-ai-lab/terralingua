@@ -24,9 +24,9 @@ The install gives three commands:
 
 | Command | What it does |
 |---|---|
-| `terralingua` | Runs a simulation. `python main.py` does the same. |
-| `terralingua-dashboard` | Serves the dashboard and the remote-agent API on port 8765. `python api_server.py` does the same. |
-| `terralingua-anthropologist` | Runs the live analysis next to a run. `python anthropologist_server.py` does the same. |
+| `terralingua` | Runs a simulation. |
+| `terralingua-dashboard` | Serves the dashboard and the remote-agent API on port 8765. |
+| `terralingua-anthropologist` | Runs the live analysis next to a run. |
 
 Developers who run the full test suite also install `requirements.txt`.
 

@@ -85,6 +85,7 @@ An action that exists only in the mechanic must be handled in `on_action`. The w
 | `env.deaths` | Records of the previous step's deaths: tag, name, position, reason, artifacts, step. |
 | `env.rng` | A numpy generator seeded by `run.seed`. Use it for every random choice, so a run repeats. |
 | `env.logger` | The world log. `None` in some tests. |
+| `env.log_path` | The run folder, `logs/<exp_name>/`. A mechanic may write its own files there. |
 
 ### What a mechanic may write
 
@@ -101,6 +102,10 @@ An action that exists only in the mechanic must be handled in `on_action`. The w
 ### State and checkpoints
 
 `self.state` is a dict. The world saves it under the mechanic's name in every checkpoint and restores it in place on resume. Keep only values that JSON and pickle both accept: numbers, strings, lists, dicts. Store a grid position as a list, and turn it back into a tuple when you read it. The mechanic's name is the class name in lower case unless the class sets `name`.
+
+## Your own outputs and viewers
+
+The core dashboard shows the world: positions, energy, inventory, artifacts, births and deaths. It knows nothing about a scenario's state. A scenario that wants to show its own state ships its own viewer, as a separate process that reads the run folder. The mechanic writes what that viewer needs: from `on_step`, append one JSON line per step to a file under `env.log_path`, with the positions, the energy and the mechanic's own state, and log the scenario's events with `env.logger.log`. The viewer then works on a finished run and on a running one.
 
 ## Artifact types
 
