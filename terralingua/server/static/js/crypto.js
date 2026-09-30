@@ -1,7 +1,9 @@
-// API keys are encrypted with AES-GCM. The non-extractable CryptoKey lives in
-// IndexedDB — its raw bytes are never exposed to JS, so XSS can use the key
-// but cannot exfiltrate it. Ciphertext and IV live alongside it in the same DB.
-// Keys are intentionally ephemeral in private/incognito sessions.
+// The API key an anonymous visitor types into the dashboard is kept in
+// IndexedDB, so the field is filled again on the next visit. It is stored
+// AES-GCM encrypted under a non-extractable CryptoKey kept in the same record,
+// so the plaintext is not written as such. This is no protection against
+// scripts running in this page: any of them can call loadApiKey() and read the
+// key. Keys are intentionally ephemeral in private/incognito sessions.
 
 const ANON_ID_KEY  = "ogw-anon-id";
 const DB_NAME      = "ogw-keys";
@@ -59,7 +61,7 @@ export async function saveApiKey(plaintext) {
   }
   const key = await crypto.subtle.generateKey(
     { name: "AES-GCM", length: 256 },
-    false,                     // non-extractable: raw bytes never leave the JS engine
+    false,                     // non-extractable: the raw key bytes cannot be exported
     ["encrypt", "decrypt"],
   );
   const iv         = crypto.getRandomValues(new Uint8Array(12));
