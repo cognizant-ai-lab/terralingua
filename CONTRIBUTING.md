@@ -12,6 +12,15 @@ Thank you for your interest in contributing to this project!
 6. Push to your branch (`git push origin feature/your-feature`)
 7. Open a Pull Request
 
+## Run the tests
+
+```bash
+pip install -e ".[analysis]" pytest ruff
+pytest                                   # from the repository root
+node --test tests/test_graph_replay.mjs  # the dashboard replay test, needs Node 22 or newer
+ruff check .
+```
+
 ## Pull Request Guidelines
 
 - Provide a clear description of the changes

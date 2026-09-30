@@ -1,0 +1,108 @@
+# template_preset.yaml — REFERENCE of every tunable parameter (auto-generated).
+#
+# This file is NOT auto-discovered: discovery only matches `preset.yaml` and
+# `<name>.preset.yaml`. Use it as a catalogue of what you can configure. Copy the
+# keys you care about into a real `<name>.preset.yaml`, or pass them on the CLI as
+# `--field VALUE` / `--section.field VALUE` / `--no-flag`. Values below are the
+# model defaults; a preset only needs to list the keys it changes.
+#
+# Field values and descriptions come from terralingua.config.models.iter_config_fields.
+# Social graphs use food_mechanism=false. See python -m terralingua.config describe for conditions.
+
+config:
+  agent:
+    agents_name_prefix: "being"  # str. Prefix for agent names (e.g. being0, being1)
+    scenario_specific_instructions: "none"  # str. Scenario instructions injected into the system prompt: a builtin name ['base', 'creative', 'none', 'survival'] or a path to an instructions file (a Markdown file inside the scenario folder, rendered with Jinja).
+    genome: "ocean_5"  # str. Agent genome type
+    internal_memory_size: 500  # int. Internal memory token budget. Zero disables private memory.
+    max_history: 10  # int. Max number of interactions stored per agent
+    model: "claude-haiku-4-5"  # str. Model name used for agent decisions
+    max_tokens: null  # int | None. Max output tokens per agent LLM call. None uses the router's per-model default (e.g. 20000 for Claude).
+    reasoning_effort: null  # str | None. Reasoning effort, one of ('minimal', 'low', 'medium', 'high', 'xhigh', 'max'). None keeps the router's per-model default. For OpenAI reasoning models it sets reasoning_effort; for Anthropic (Opus 4.6+/Sonnet 4.6) it enables adaptive thinking at this effort level via output_config.effort.
+    use_colors: false  # bool. Allow agents to choose their own color
+    use_inventory: true  # bool. Enable inventory system
+    random_names: false  # bool. Give agents random word names instead of beingX tags
+  env:
+    agent_lifespan: 100  # int. Lifespan baseline. -1 gives unlimited life. Values above one vary by up to 20%; other values last one turn.
+    artifact_creation_cost: 0  # int. Artifact creation cost. -1 disables creation, 0 is free, and positive values charge energy.
+    use_library: true  # bool. Enable the shared artifact library/commons (social-graph world)
+    library_preview: true  # bool. show_library_content includes a short content preview, not just names
+    allow_fixed_artifacts: true  # bool. Allow agents to create fixed artifacts. When false, create_artifact makes only movable artifacts. Seeded and administrator-created artifacts are independent.
+    max_artifact_tokens: 500  # int. Maximum token length of a text artifact's payload
+    drop_food_on_death: true  # bool. Drop food at agent position on death
+    food_decay_rate: 0.05  # float. Food decay rate
+    food_mechanism: true  # bool. Enable natural food generation, decay, and one energy of upkeep per step. Unsupported in social graphs.
+    energy_death: null  # bool | None. Agents die when energy reaches 0. Default: only when food_mechanism is on
+    food_spawn_rate: 10  # int. Food spawn per step
+    food_zones: 2  # int | list[tuple[int, int]] | list[str] | None. Food zones: a positive count, grid x,y coordinates, graph node names, or null for uniform placement
+    dynamic_grid_scaling: true  # bool. Expand grid when agent density exceeds the max
+    dynamic_grid_min_cells_per_agent: 50  # int. Minimum cells per agent before the grid expands
+    dynamic_grid_step: 10  # int. Rows/cols added to each side when the grid expands
+    grid_size: 50  # int. Grid dimension
+    inert_artifacts: false  # bool. Artifacts cannot be interacted with
+    init_agents: 20  # int. Initial agent count
+    init_human_agents: 0  # int. Initial human agent count
+    init_agent_energy: 50  # int. Initial energy per agent
+    init_food: 100  # int. Initial food energy, limited by available placement space
+    max_message_length: 200  # int. Max token length for agent broadcast messages (0 = unlimited)
+    min_agents: 0  # int. Minimum agent population
+    max_agents: null  # int | None. Population threshold that blocks reproduction. Other arrival paths are not capped by this setting. None means no reproduction threshold.
+    two_parent_spawn: false  # bool. Allow two-parent spawning (genome crossover with a nearby agent)
+    genome_mutation_rate: 0.5  # float. Probability each gene mutates during spawning (0=never, 1=always)
+    reproduction_cost: 50  # int. Reproduction energy: -1 disables it; 0 grants the child initial agent energy; a positive value funds that much child energy from the parent. Failed attempts consume the cost. Optional gifts also come from the parent.
+    static_food: false  # bool. Food always spawns in same positions
+    excluded_actions: []  # list. Action keys to exclude from available actions
+    init_artifacts_path: null  # str | None. Path to directory containing JSON artifact files to seed at startup
+    roles_hocon_path: null  # str | None. HOCON file defining persistent roles.
+    affordances_file_path: null  # str | None. JSON file defining node, cell, or role permissions.
+    vision_radius: 5  # int. Vision radius
+    world_type: "grid"  # str. World type: 'grid', 'graph', or 'social_graph'
+    graph:  # Graph and social graph settings
+      topology: "grid"  # str. Topology used to create the initial graph.
+      n_nodes: 25  # int. Requested initial node count.
+      hop_radius: 2  # int. Observation radius in graph edges.
+      max_connections: null  # int | None. Maximum outgoing social connections per agent. Null means unlimited.
+      edge_decay_steps: null  # int | None. Expire inactive social connections after this many steps. Null disables expiry.
+      random_intro_k: 3  # int. Connection suggestions per step. About two thirds prefer outgoing two-hop neighbors.
+      direct_message_cost: 0  # int. Energy cost per direct message.
+      allow_follow: true  # bool. Allow following other agents.
+      allow_connection: true  # bool. Allow mutual connection requests.
+      connection_request_lifespan: 3  # int. Steps before an unanswered connection request expires.
+      wrap: false  # bool. Connect opposite boundaries of the grid graph.
+      tree_branching: 3  # int. Children per internal tree node.
+      tree_height: null  # int | None. Tree height. Null derives height from the requested node count.
+      bipartite_n1: 0  # int. First partition size. Zero uses the topology default.
+      bipartite_n2: 0  # int. Second partition size. Zero uses the topology default.
+      small_world_k: 4  # int. Initial neighbors per node in a small-world graph.
+      small_world_p: 0.1  # float. Small-world edge rewiring probability.
+      scale_free_m: 2  # int. Edges added with each scale-free node.
+      random_p: 0.15  # float. Edge probability in a random graph.
+      seed: null  # int | None. Seed for randomized topology generation.
+      file_path: null  # str | None. Graph file used by the file topology.
+      agent_network_hocon_path: null  # str | None. HOCON file defining founding agents and their connections.
+      agent_network_bidirectional_edges: false  # bool. Add the reverse edge for each HOCON connection.
+      custom_factory: null  # str | None. Import path for a custom topology factory.
+  run:
+    runner_class: null  # str | None. Optional scenario runner class, written as module:Class
+    scenario: null  # str | None. Python module of the scenario to attach, for example scenarios.example. It exposes Options and build(options).
+    scenario_options: {}  # dict. Settings validated by the selected scenario or scenario runner
+    seed: null  # int | None. Seed for the world's random generator. Null leaves it unseeded.
+    ckpt_interval: 100  # int. Checkpoint interval
+    empty_countdown: 20  # int. Steps to wait with no agents before terminating (-1 = never)
+    exp_description: ""  # str. Experiment description
+    exp_name: null  # str | None. Experiment name
+    external_servers_config: null  # str | None. Path to a servers.json declaring external MCP servers
+    external_sync_send: true  # bool. Send messages to external servers sequentially (sync) vs fire-and-forget
+    external_server_port: null  # int | None. Override the port in the sole external server's URL from servers.json (lets parallel runs use their own MCP port without editing the file)
+    external_server_callback_port: null  # int | None. Override the sole external server's callback_port from servers.json (lets parallel runs use their own callback port without editing the file)
+    reward_to_energy_coefficient: 0.0  # float. Multiply the 'reward' field of an external server response into agent energy (0 = off)
+    live_render: false  # bool. Render simulation live
+    max_parallel_workers: 8  # int. Maximum concurrent agent decisions
+    max_ts: 3000  # int. Max simulation timesteps. -1 for infinite
+    ports: [9000, 9001, 9002, 9003, 9010, 9011, 9012]  # tuple. Ports hosting LLM models
+    remote_api_enabled: false  # bool. Enable remote agent API server
+    env_heartbeat: 30.0  # float. Seconds to wait for remote agent actions before stepping (-1 = wait for all)
+    stop_on_external_solved: false  # bool. Stop the run as soon as an external server response signals task completion (a truthy 'solved' or 'done'). Off by default; tasks that run to a fixed horizon leave it off.
+    allow_human_agents: true  # bool. Allow human-controlled remote agents to be registered via the dashboard
+    save_video: true  # bool. Save video
+    video_fps: 10  # int. FPS for video output

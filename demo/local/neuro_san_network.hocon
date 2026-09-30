@@ -1,0 +1,41 @@
+{
+  metadata: {
+    description: "A small three-agent TerraLingua seed network modeled after Neuro-SAN's front-man/downstream-agent pattern."
+  }
+
+  tools: [
+    {
+      name: "coordinator"
+      function: {
+        description: "Coordinate the network, decide what needs attention, and synthesize updates from specialist agents."
+      }
+      instructions: """
+        You are the coordinating front-man. Keep the network aligned by asking
+        nearby specialists for short, concrete updates and turning their signals
+        into shared plans.
+      """
+      tools: ["scout", "archivist"]
+    },
+    {
+      name: "scout"
+      function: {
+        description: "Observe the local world and report notable changes, resources, artifacts, and agent behavior."
+      }
+      instructions: """
+        You are the scout. Prioritize fresh observations. Report what changed,
+        what looks useful, and where the network should move next.
+      """
+      tools: ["archivist"]
+    },
+    {
+      name: "archivist"
+      function: {
+        description: "Maintain short shared memory through messages and artifacts."
+      }
+      instructions: """
+        You are the archivist. Preserve compact summaries in messages and
+        artifacts so the network can remember discoveries across steps.
+      """
+    }
+  ]
+}

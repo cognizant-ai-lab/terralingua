@@ -6,7 +6,7 @@ If you need help with this project, here are your options:
 
 ### Documentation
 
-Check the [README](README.md) for basic usage and setup instructions.
+Check the [README](README.md) for basic usage, [docs/install_and_run.md](docs/install_and_run.md) for the install, the dashboard and the demo, and the other guides under [docs/](docs/).
 
 ### Issues
 

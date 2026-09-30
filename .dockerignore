@@ -1,0 +1,51 @@
+# ── Runtime / host-side bind-mount targets ───────────────────────────────
+# These can grow to gigabytes (Postgres cluster, simulation logs).
+live-data/
+logs/
+data/
+
+# ── Secrets / state ──────────────────────────────────────────────────────
+.env
+live.env
+**/live.env
+dump.rdb
+
+# ── VCS / IDE / OS noise ─────────────────────────────────────────────────
+.git/
+**/.git/
+.claude/
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# ── Python build / cache artifacts ───────────────────────────────────────
+__pycache__/
+**/__pycache__/
+**/.venv/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.coverage
+htmlcov/
+coverage.xml
+dist/
+build/
+
+# ── Jupyter ──────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── Code paths not used by the containers ────────────────────────────────
+tests/
+logs_demo/
+
+# ── Dev-only launch scripts (not used by the container) ─
+run_suite.sh

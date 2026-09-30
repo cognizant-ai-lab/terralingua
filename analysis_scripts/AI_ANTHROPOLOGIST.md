@@ -37,7 +37,7 @@ Analyzes each agent's full life-log individually.
 4. **Anthropologist note** — a third LLM call produces a free-text qualitative description of the agent's life history.
 5. Save final annotations to `annotations/<model>/<agent_name>.json` and collect notes in `anthropologist_notes.json`.
 
-Agents are processed in parallel (up to 4 workers). Long agent logs automatically switch to a long-context model.
+Agents are annotated concurrently. Long agent logs automatically switch to a long-context model.
 
 ---
 
@@ -121,7 +121,7 @@ When multiple categories apply, the highest-complexity one is assigned. Results 
 
 ---
 
-### `006_artifact_philogeny.py` — Artifact phylogeny reconstruction
+### `006_artifact_phylogeny.py` — Artifact phylogeny reconstruction
 
 Reconstructs the dependency graph of artifacts — which prior artifacts influenced each new one.
 
@@ -131,17 +131,21 @@ Reconstructs the dependency graph of artifacts — which prior artifacts influen
 
 2. **LLM inference** — the LLM receives the artifact being created, the agent's context at that moment (reasoning, observations, memory, inventory contents), and a candidate list of prior artifacts whose names appear in the context. It returns a dictionary of `{ancestor_id: confidence}` pairs. Only artifacts already in the agent's context at creation time are considered as candidates.
 
-Both methods produce a phylogeny graph saved as `artifact_phylogeny_hand.json` and `artifact_phylogeny_<model>.json` under `artifact_analysis/`.
+Both methods produce a phylogeny graph under `artifact_analysis/`: `artifact_phylogeny_hand.json` for the hand-written method and `artifact_phylogeny.json` for the LLM method.
 
 ---
 
 ## Supporting Files
 
+The analysis code lives in the package, under `terralingua/anthropologist/`:
+
 - **`tags.json`** — Tag vocabularies for annotation: `agent_events`, `agent_behavior`, `agent_emergence`, `group_events`, `group_behavior`, `group_emergence`.
 - **`graph_utils.py`** — Graph construction, community detection (SLPA), and all graph metrics.
 - **`artifact_complexity.py`** — Artifact complexity metric implementations.
 - **`error_tracker.py`** — Collects and summarizes errors across experiments.
-- **`plot_utils.py`** — Shared plotting utilities for notebooks.
+- **`orchestrator.py`** — Runs the five steps, live or in batch.
+
+In this folder, **`plot_utils.py`** holds the shared plotting utilities of the notebooks and **`ogw_log.py`** the parsers of the world log.
 
 ---
 
