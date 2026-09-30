@@ -9,10 +9,6 @@ const DB_VERSION   = 1;
 const STORE_NAME   = "api-key";
 const RECORD_ID    = "main";
 
-// Legacy localStorage keys — kept only for one-time migration.
-const LEGACY_PLAIN = "ogw-api-key";
-const LEGACY_V2    = "ogw-api-key-v2";
-
 function _openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -46,19 +42,6 @@ function _txDelete(db, id) {
   });
 }
 
-// Decrypt a legacy v2 localStorage blob so we can migrate it.
-async function _decryptLegacyV2(stored) {
-  const ciphertext  = Uint8Array.from(atob(stored.ciphertext), c => c.charCodeAt(0));
-  const iv          = Uint8Array.from(atob(stored.iv),          c => c.charCodeAt(0));
-  const keyMaterial = Uint8Array.from(atob(stored.key_material), c => c.charCodeAt(0));
-  const key = await crypto.subtle.importKey(
-    "raw", keyMaterial, { name: "AES-GCM" }, false, ["decrypt"],
-  );
-  return new TextDecoder().decode(
-    await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext),
-  );
-}
-
 export function getAnonId() {
   let id = localStorage.getItem(ANON_ID_KEY);
   if (!id) {
@@ -89,36 +72,6 @@ export async function saveApiKey(plaintext) {
 }
 
 export async function loadApiKey() {
-  // One-time migration from legacy localStorage formats. A legacy entry is
-  // removed only after the new store holds the key. If the browser database
-  // is unavailable, the entry stays for the next load and the key is still
-  // returned for this session.
-  const legacyPlain = localStorage.getItem(LEGACY_PLAIN);
-  if (legacyPlain) {
-    try {
-      await saveApiKey(legacyPlain);
-      localStorage.removeItem(LEGACY_PLAIN);
-    } catch (_) {}
-    return legacyPlain;
-  }
-  const legacyV2 = localStorage.getItem(LEGACY_V2);
-  if (legacyV2) {
-    let plaintext = null;
-    try {
-      plaintext = await _decryptLegacyV2(JSON.parse(legacyV2));
-    } catch (_) {
-      // Unreadable: it can never migrate, so it must not block the new store.
-      localStorage.removeItem(LEGACY_V2);
-    }
-    if (plaintext !== null) {
-      try {
-        await saveApiKey(plaintext);
-        localStorage.removeItem(LEGACY_V2);
-      } catch (_) {}
-      return plaintext;
-    }
-  }
-
   try {
     const db     = await _openDB();
     const record = await _txGet(db, RECORD_ID);
