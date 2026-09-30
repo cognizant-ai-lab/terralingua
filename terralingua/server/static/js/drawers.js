@@ -697,7 +697,7 @@ document.getElementById("followEditBtn").addEventListener("click",()=>{ if(state
 document.getElementById("followKillBtn").addEventListener("click",async()=>{
   if(!state.selectedTag) return;
   const data=agentStore.get(state.selectedTag); if(!data) return;
-  if(!await _confirm(`Kill agent <strong>${agentName(state.selectedTag)}</strong>? It will die on the next simulation step.`, "Kill", "Cancel")) return;
+  if(!await _confirm(`Kill agent ${agentName(state.selectedTag)}? It will die on the next simulation step.`, "Kill", "Cancel")) return;
   try{
     await _wsRequest("kill_agent",{tag:state.selectedTag,token:data.token});
     _deselectAgent();

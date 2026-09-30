@@ -55,7 +55,9 @@ export const humanWaiting        = new Map(); // tag → {payload, ws}
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 export function escHtml(s) {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 export function agentName(tag) {

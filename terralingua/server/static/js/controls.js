@@ -15,7 +15,7 @@ document.getElementById("killAllBtn").addEventListener("click", async () => {
   const mine = [...agentStore.keys()].map(t => [t, agentStore.get(t)]).filter(([,d]) => !d.isHuman);
   if (!mine.length) return;
   const n = mine.length;
-  if (!await _confirm(`Kill all <strong>${n}</strong> of your agent${n===1?"":"s"}? They will die on the next simulation step.`, "Kill All", "Cancel")) return;
+  if (!await _confirm(`Kill all ${n} of your agent${n===1?"":"s"}? They will die on the next simulation step.`, "Kill All", "Cancel")) return;
   await Promise.allSettled(mine.map(([tag, data]) => wsRequest("kill_agent", {tag, token: data.token})));
   deselectAgent();
 });
@@ -78,7 +78,7 @@ document.getElementById("artDetailBody").addEventListener("click", e => {
 document.getElementById("artDetailEditBtn").addEventListener("click",()=>{ if(state.selectedArtifact) openArtDrawerEdit(state.selectedArtifact); });
 document.getElementById("artDetailDeleteBtn").addEventListener("click",async()=>{
   const art=state.selectedArtifact; if(!art) return;
-  if(!await _confirm(`Delete artifact "<strong>${art.name}</strong>"? It will disappear at the next timestep.`, "Delete", "Cancel")) return;
+  if(!await _confirm(`Delete artifact "${art.name}"? It will disappear at the next timestep.`, "Delete", "Cancel")) return;
   try{
     await wsRequest("destroy_artifact",{name:art.name});
     myArtifacts.delete(art.name); _saveMyArtifacts();
