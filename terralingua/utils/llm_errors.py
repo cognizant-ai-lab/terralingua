@@ -14,8 +14,11 @@ def llm_error_type(exc: Exception) -> str | None:
         return None
     body = getattr(exc, "body", None)
     if isinstance(body, dict):
-        sdk_type = (body.get("error") or {}).get("type")
-        if sdk_type:
+        # Providers nest the type under "error" or put it at the top level, and
+        # "error" may be a plain string.
+        error = body.get("error")
+        sdk_type = error.get("type") if isinstance(error, dict) else body.get("type")
+        if isinstance(sdk_type, str) and sdk_type:
             return sdk_type
     status = getattr(exc, "status_code", None)
     return f"http_{status}" if status else "api_error"
