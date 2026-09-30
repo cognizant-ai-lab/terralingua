@@ -79,7 +79,7 @@ Analyze the logs and the exchanged messages of the agent and do the following:
     - `"description": "<short natural language description>"`
     - `"reference": [{{"step": <timestep>, "snippet": "<exact short quote>"}}]
 4. **References:**
-    - For each reference, quote an exact substring from one of: action.message, observation.message[<agent>], or artifact payload.
+    - For each reference, quote an exact substring from one of: sent_message, received_messages[<agent>], or artifact payload.
     - Do not paraphrase.
     - If no exact quote exists, omit that annotation.
 5. **Condensation**

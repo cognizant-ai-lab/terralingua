@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 import numpy as np
 from tqdm import tqdm
 
-from terralingua.anthropologist.analysis_utils import load_agent_log
+from terralingua.anthropologist.analysis_utils import load_agent_log, received_messages
 from terralingua.anthropologist.analysts.base import BaseAnalyst
 from terralingua.utils import ROOT
 from terralingua.utils.llm_client import LLMClient
@@ -500,7 +500,7 @@ def _get_history(ts_log: dict) -> dict:
     return {
         "observation": ts_log["observation"]["observation"],
         "inventory": ts_log["observation"]["inventory"],
-        "received_messages": ts_log["observation"]["message"],
+        "received_messages": received_messages(ts_log["observation"]),
         "message_sent": ts_log["action"]["message"],
         "action": ts_log["action"]["action"],
         "action_parameters": ts_log["action"]["params"],
@@ -559,7 +559,7 @@ def _format_received_messages(received_messages: dict) -> str:
         return "No messages received."
     formatted = "Received messages:\n"
     for sender, msg in received_messages.items():
-        formatted += f"  - {sender}: {msg.strip()}\n"
+        formatted += f"  - {sender}: {str(msg).strip()}\n"
     return formatted
 
 
@@ -585,9 +585,9 @@ def _extract_info_from_log(
         agent_observations += "\n" + _format_inventory(
             inventory, all_artifacts, creation_time
         )
-    received_messages = creation_log["observation"]["message"]
-    if received_messages:
-        agent_observations += "\n" + _format_received_messages(received_messages)
+    received = received_messages(creation_log["observation"])
+    if received:
+        agent_observations += "\n" + _format_received_messages(received)
     sent_message = creation_log["action"]["message"].strip()
     if sent_message:
         agent_observations += f"\nBroadcasted message: {sent_message}"

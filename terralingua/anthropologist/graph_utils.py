@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Interaction graph for broadcast messaging:
-- Messages: ONLY from observation.message (sender → current agent)
+Interaction graph of the beings:
+- Messages: every received broadcast or direct message (sender → current agent)
 - Energy give/take and parenthood from actions
 
 Outputs:
@@ -27,12 +27,16 @@ import pandas as pd
 from cdlib import algorithms
 from networkx.readwrite import json_graph
 
-from terralingua.anthropologist.analysis_utils import load_agent_log, load_worldlog
+from terralingua.anthropologist.analysis_utils import (
+    load_agent_log,
+    load_worldlog,
+    received_messages,
+)
 from terralingua.utils import ROOT
 
 # TODO add sent analysis of messages (to differentiate between positive and negative interactions)
 
-DEFAULT_ALPHA_MSG = 0.5  # per observed message (broadcast)
+DEFAULT_ALPHA_MSG = 0.5  # per received message (broadcast or direct)
 DEFAULT_ALPHA_SEEN = 0.1  # per observed agent
 DEFAULT_ALPHA_GIVE = 1.0  # per energy unit
 DEFAULT_ALPHA_STEAL = -1.0  # per energy unit (negative)
@@ -204,9 +208,9 @@ def build_graph(
             else:
                 obs = data_point.get("observation") or {}
 
-            # For each sender listed in observation.message, add sender -> current agent
+            # For each sender of a received message, add sender -> current agent
             senders = find_agents_heard(
-                observation=obs.get("message", {}),
+                observation=received_messages(obs),
                 name_to_tags=name_to_tags,  # type: ignore
             )
 

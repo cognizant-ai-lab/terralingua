@@ -7,6 +7,14 @@ from typing import List
 import numpy as np
 
 
+def received_messages(observation: dict) -> dict:
+    """Messages an agent received in one step, by sender: broadcasts and direct messages."""
+    messages = dict(observation.get("incoming_broadcasts", {}))
+    for sender, text in observation.get("incoming_dms", {}).items():
+        messages[sender] = f"{messages[sender]}\n{text}" if sender in messages else text
+    return messages
+
+
 def load_agent_log(filepath: Path | str, reduce: bool) -> dict:
     """Load agent log
 
@@ -45,7 +53,7 @@ def load_agent_log(filepath: Path | str, reduce: bool) -> dict:
 
                     obs_dict = deepcopy(obj["observation"])
                     obj["observation"] = obs_dict.get("observation", {})
-                    obj["received_messages"] = obs_dict.get("message", {})
+                    obj["received_messages"] = received_messages(obs_dict)
                     obj["energy"] = obs_dict["energy"]
                     obj["time"] = obs_dict["time"]
                     if "inventory" in obs_dict:
