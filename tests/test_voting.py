@@ -11,6 +11,7 @@ import random
 import numpy as np
 import pytest
 
+from terralingua.voting.canonical import structural_parse
 from terralingua.voting.election import Ballot, VoteOutcome, elect
 from terralingua.voting.manager import (
     IndependentVotingManager,
@@ -182,6 +183,20 @@ def test_action_key_groups_same_meaning_ballots():
     # Unparseable strings fall back to trimmed-text identity.
     assert action_key({"note": " hello "}) == action_key({"note": "hello"})
     assert action_key({"note": "hello"}) != action_key({"note": "goodbye"})
+
+
+def test_action_key_keeps_colliding_argument_names_apart():
+    # A named argument may not take the place of the action name or of another
+    # argument. Such a string is compared as plain text instead.
+    assert structural_parse("danger(action_name=safe)") is None
+    assert structural_parse("place(x=1, x=2)") is None
+    assert structural_parse("place(arg1=1, 2)") is None
+    assert action_key({"action": "danger(action_name=safe)"}) != action_key(
+        {"action": "safe()"}
+    )
+    assert action_key({"action": "place(x=1, x=2)"}) != action_key(
+        {"action": "place(x=2)"}
+    )
 
 
 def test_unanimous_validation_exposes_vote_outcomes():

@@ -74,8 +74,12 @@ def structural_parse(value: str) -> Optional[Dict[str, Any]]:
     fields: Dict[str, Any] = {"action_name": name}
     for i, part in enumerate(split_top_level(body)):
         key, eq, raw = part.partition("=")
-        if eq and re.fullmatch(r"[A-Za-z_]\w*", key.strip()):
-            fields[key.strip()] = parse_scalar(raw)
+        key = key.strip()
+        if eq and re.fullmatch(r"[A-Za-z_]\w*", key):
+            value = parse_scalar(raw)
         else:
-            fields[f"arg{i}"] = parse_scalar(part)
+            key, value = f"arg{i}", parse_scalar(part)
+        if key in fields:
+            return None
+        fields[key] = value
     return fields
