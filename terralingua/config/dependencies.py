@@ -308,3 +308,22 @@ def dependencies(condition) -> list[str]:
 
 def is_active(condition, values: dict) -> bool:
     return Draft202012Validator(condition).is_valid(values)
+
+
+def prefixed(condition, prefix: str):
+    """The same condition with every parameter path prefixed."""
+    if isinstance(condition, bool):
+        return condition
+    result = {}
+    for key, value in condition.items():
+        if key == "properties":
+            result[key] = {prefix + path: schema for path, schema in value.items()}
+        elif key == "required":
+            result[key] = [prefix + path for path in value]
+        elif key in ("allOf", "anyOf", "oneOf"):
+            result[key] = [prefixed(child, prefix) for child in value]
+        elif key == "not":
+            result[key] = prefixed(value, prefix)
+        else:
+            result[key] = value
+    return result
