@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "terralingua"
-version = "0.2.0"
+version = "0.2.1"
 description = "Multi-agent simulation framework where LLM-powered beings live in a shared world, with an AI anthropologist that annotates the run."
 readme = "README.md"
 license = {text = "Apache-2.0"}

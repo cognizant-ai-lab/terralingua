@@ -26,6 +26,12 @@ from terralingua.config.models import (
     _field_default,
     _type_str,
 )
+from terralingua.experiment.scenario_loader import (
+    OPTIONS_PREFIX,
+    ScenarioImportError,
+    flatten_options,
+    scenario_applicability,
+)
 
 FORMAT_VERSION = 1
 MODELS = {
@@ -207,7 +213,45 @@ def inspect_config(config: ExperimentConfig, requested: dict | None = None) -> d
             config.env.graph.hop_radius if config.env.world_type == "graph" else None
         ),
     }
-    if config.run.scenario_options:
+    deferred = bool(config.run.scenario_options)
+    if config.run.scenario:
+        try:
+            applicability, option_values, option_defaults = scenario_applicability(
+                config.run.scenario, config.run.scenario_options
+            )
+        except ScenarioImportError as exc:
+            applicability, option_values, option_defaults = {}, {}, {}
+            diagnostics.append({
+                "severity": "info",
+                "code": "scenario_not_imported",
+                "field": "run.scenario",
+                "message": f"The scenario module is not importable from here: {exc}",
+            })
+        else:
+            deferred = False  # the options were validated here
+        if applicability:
+            explicit_options = {
+                OPTIONS_PREFIX + path
+                for path, _value in flatten_options(
+                    requested.get("run", {}).get("scenario_options") or {}
+                )
+            }
+            for path, (condition, reason) in applicability.items():
+                active = is_active(condition, option_values)
+                states[path] = {"active": active, "reason": "" if active else reason}
+                (active_values if active else inactive_values)[path] = option_values.get(path)
+                if (
+                    not active
+                    and path in explicit_options
+                    and option_values.get(path) != option_defaults.get(path)
+                ):
+                    diagnostics.append({
+                        "severity": "warning",
+                        "code": "inactive_setting",
+                        "field": path,
+                        "message": f"{path} is inactive. {reason}",
+                    })
+    if deferred:
         diagnostics.append({
             "severity": "info",
             "code": "scenario_validation_deferred",

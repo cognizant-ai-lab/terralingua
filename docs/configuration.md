@@ -102,6 +102,10 @@ Finite life continues to count down normally.
 Use JSON `null` for nullable values.
 Do not substitute a string such as `"null"` unless that field supports it.
 
+## Scenario options
+
+A scenario package may declare which of its options apply only when another option turns a rule on; see [writing_a_scenario.md](writing_a_scenario.md). `evaluate` then lists those options under `run.scenario_options.<name>` in `fields`, `active_values` and `inactive_values`, and warns about inactive options the run sets. `describe` does not include them, since it has no run to read the scenario from.
+
 ## Description output
 
 `describe` includes:
@@ -180,6 +184,7 @@ It returns diagnostics rather than starting a simulation.
 
 Offline evaluation does not contact model providers or external servers.
 It does not import custom runner classes or custom topology factories.
+It imports the package named by `run.scenario`, with the working directory on the import path, to read the scenario's options model and applicability table. The package's import-time code runs.
 Server contents, permissions, and connectivity still need startup checks.
 Scenario runners validate their own option dictionaries.
 Referenced files can change between evaluation and startup.

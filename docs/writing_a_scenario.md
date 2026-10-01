@@ -167,6 +167,21 @@ Options can be overridden on the command line as JSON: `--scenario_options '{"pe
 
 Every new engine setting a scenario needs is a change to the engine, not to the scenario. If a scenario needs one, it belongs in a discussion, not in a copy of the engine.
 
+## When an option applies
+
+Some options matter only when another option turns a rule on. The package may say so with an `APPLICABILITY` table, in the shape the engine uses for its own settings: option name to (condition, reason). Conditions use the engine's helpers over option names. Nested options use dotted names.
+
+```python
+from terralingua.config.dependencies import when
+
+APPLICABILITY = {
+    "storm_damage": (when("storms", const=True), "Requires storms."),
+    "shelter.capacity": (when("shelter", type="object"), "Requires a shelter."),
+}
+```
+
+The engine reads the table when it composes a run, so it imports the package then. A run that sets an inactive option to a value other than its default gets a warning at start. `python -m terralingua.config evaluate --preset <name>` lists each declared option under `run.scenario_options.<name>` with its state. Conditions are checked against the validated options, so defaults count. A table that names an unknown option, or a condition that is not valid JSON Schema, is an error. Options the package rejects fail the composition with the package's own message. When the package cannot be imported from the working directory, the report says so and the check waits for the start of the run.
+
 ## Tests
 
 Drive the world directly, with scripted actions and no model calls. The pattern:
