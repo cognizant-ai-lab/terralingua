@@ -12,6 +12,13 @@ Describe all fields, defaults, choices, and dependencies:
 python -m terralingua.config describe
 ```
 
+Also describe the options of a scenario, either through a preset that selects it or by module name:
+
+```sh
+python -m terralingua.config describe --preset example
+python -m terralingua.config describe --scenario scenarios.example
+```
+
 Evaluate an installed preset:
 
 ```sh
@@ -104,7 +111,9 @@ Do not substitute a string such as `"null"` unless that field supports it.
 
 ## Scenario options
 
-A scenario package may declare which of its options apply only when another option turns a rule on; see [writing_a_scenario.md](writing_a_scenario.md). `evaluate` then lists those options under `run.scenario_options.<name>` in `fields`, `active_values` and `inactive_values`, and warns about inactive options the run sets. `describe` does not include them, since it has no run to read the scenario from.
+A scenario package may declare which of its options apply only when another option turns a rule on; see [writing_a_scenario.md](writing_a_scenario.md). `evaluate` then lists those options under `run.scenario_options.<name>` in `fields`, `active_values` and `inactive_values`, and warns about inactive options the run sets.
+
+`describe --preset <name>` or `describe --scenario <module>` adds a `scenario` key: the module name, the JSON Schema of its options model, and `fields`, keyed by `run.scenario_options.<name>`, nested options with dotted names. Each field has `type`, `schema`, `default`, `required`, `description`, `active_when`, `inactive_reason`, `depends_on` and `affects`, like a core field. A preset without a scenario gives `null`. Plain `describe` has no `scenario` key. A scenario that cannot be imported from the working directory, or an options model whose types have no JSON Schema, gives an error report with exit code 2.
 
 ## Description output
 

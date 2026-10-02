@@ -3,7 +3,8 @@
 import importlib
 import sys
 from pathlib import Path
-from typing import get_args
+from types import UnionType
+from typing import Union, get_args, get_origin
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
@@ -58,20 +59,73 @@ def flatten_options(options: dict, parent: str = ""):
             yield from flatten_options(value, f"{path}.")
 
 
-def option_paths(model: type[BaseModel], parent: str = "") -> set[str]:
+def nested_models(annotation) -> list[type[BaseModel]]:
+    """The pydantic models an option annotation holds, directly or as union members.
+
+    A list or dict of models is not a nested option: its items have no dotted name.
+    """
+    candidates = [annotation]
+    if get_origin(annotation) in (Union, UnionType):
+        candidates = list(get_args(annotation))
+    return [
+        candidate
+        for candidate in candidates
+        if isinstance(candidate, type) and issubclass(candidate, BaseModel)
+    ]
+
+
+def option_paths(model: type[BaseModel], parent: str = "", seen: frozenset = frozenset()) -> set[str]:
     """Every dotted option name a pydantic model accepts, nested models included."""
+    seen = seen | {model}
     paths = set()
     for name, field in model.model_fields.items():
         path = f"{parent}{name}"
         paths.add(path)
-        for candidate in (field.annotation, *get_args(field.annotation)):
-            if isinstance(candidate, type) and issubclass(candidate, BaseModel):
-                paths |= option_paths(candidate, f"{path}.")
+        for nested in nested_models(field.annotation):
+            if nested not in seen:
+                paths |= option_paths(nested, f"{path}.", seen)
     return paths
 
 
 class ScenarioImportError(ImportError):
     """The scenario module could not be imported from the working directory."""
+
+
+def scenario_module(module_path: str):
+    """The imported scenario module, checked for its Options model."""
+    try:
+        module = import_scenario(module_path)
+    except Exception as exc:
+        raise ScenarioImportError(f"{module_path}: {exc}") from exc
+    if not hasattr(module, "Options"):
+        raise ValueError(f"Scenario module '{module_path}' has no 'Options'")
+    return module
+
+
+def scenario_table(module) -> dict:
+    """The module's APPLICABILITY table with every path under run.scenario_options.
+
+    Raises ValueError when the table names an unknown option or holds a
+    condition that is not valid JSON Schema.
+    """
+    known = option_paths(module.Options)
+    applicability = {}
+    for path, (condition, reason) in getattr(module, "APPLICABILITY", {}).items():
+        condition = prefixed(condition, OPTIONS_PREFIX)
+        try:
+            Draft202012Validator.check_schema(condition)
+        except SchemaError as exc:
+            raise ValueError(
+                f"Scenario '{module.__name__}' applicability for '{path}' is not valid JSON Schema: {exc.message}"
+            ) from exc
+        names = [path] + [ref[len(OPTIONS_PREFIX):] for ref in dependencies(condition)]
+        unknown = sorted(name for name in names if name not in known)
+        if unknown:
+            raise ValueError(
+                f"Scenario '{module.__name__}' applicability names unknown options: {unknown}"
+            )
+        applicability[OPTIONS_PREFIX + path] = (condition, reason)
+    return applicability
 
 
 def scenario_applicability(module_path: str, raw_options: dict | None) -> tuple[dict, dict, dict]:
@@ -83,16 +137,10 @@ def scenario_applicability(module_path: str, raw_options: dict | None) -> tuple[
     come from the validated options, so defaults count. The defaults are empty
     when the model has required options. Raises ScenarioImportError when the
     module cannot be imported, pydantic's ValidationError when the options are
-    invalid, and ValueError when the table names an unknown option or holds a
-    condition that is not valid JSON Schema.
+    invalid, and ValueError when the table is wrong.
     """
-    try:
-        module = import_scenario(module_path)
-    except Exception as exc:
-        raise ScenarioImportError(f"{module_path}: {exc}") from exc
-    if not hasattr(module, "Options"):
-        raise ValueError(f"Scenario module '{module_path}' has no 'Options'")
-    table = getattr(module, "APPLICABILITY", {})
+    module = scenario_module(module_path)
+    applicability = scenario_table(module)
     options = module.Options.model_validate(raw_options or {}).model_dump(mode="json")
     values = {OPTIONS_PREFIX + path: value for path, value in flatten_options(options)}
     try:
@@ -100,21 +148,4 @@ def scenario_applicability(module_path: str, raw_options: dict | None) -> tuple[
     except ValidationError:
         defaults = {}
     defaults = {OPTIONS_PREFIX + path: value for path, value in flatten_options(defaults)}
-    known = option_paths(module.Options)
-    applicability = {}
-    for path, (condition, reason) in table.items():
-        condition = prefixed(condition, OPTIONS_PREFIX)
-        try:
-            Draft202012Validator.check_schema(condition)
-        except SchemaError as exc:
-            raise ValueError(
-                f"Scenario '{module_path}' applicability for '{path}' is not valid JSON Schema: {exc.message}"
-            ) from exc
-        names = [path] + [ref[len(OPTIONS_PREFIX):] for ref in dependencies(condition)]
-        unknown = sorted(name for name in names if name not in known)
-        if unknown:
-            raise ValueError(
-                f"Scenario '{module_path}' applicability names unknown options: {unknown}"
-            )
-        applicability[OPTIONS_PREFIX + path] = (condition, reason)
     return applicability, values, defaults

@@ -180,7 +180,7 @@ APPLICABILITY = {
 }
 ```
 
-The engine reads the table when it composes a run, so it imports the package then. A run that sets an inactive option to a value other than its default gets a warning at start. `python -m terralingua.config evaluate --preset <name>` lists each declared option under `run.scenario_options.<name>` with its state. Conditions are checked against the validated options, so defaults count. A table that names an unknown option, or a condition that is not valid JSON Schema, is an error. Options the package rejects fail the composition with the package's own message. When the package cannot be imported from the working directory, the report says so and the check waits for the start of the run.
+The engine reads the table when it composes a run, so it imports the package then. A run that sets an inactive option to a value other than its default gets a warning at start. `python -m terralingua.config evaluate --preset <name>` lists each declared option under `run.scenario_options.<name>` with its state, and `describe --preset <name>` lists every option with its type, default, description and rule. Conditions are checked against the validated options, so defaults count. A table that names an unknown option, or a condition that is not valid JSON Schema, is an error. Options the package rejects fail the composition with the package's own message. When the package cannot be imported from the working directory, `evaluate` says so and leaves the check to the start of the run, and `describe` reports the import error.
 
 ## Tests
 

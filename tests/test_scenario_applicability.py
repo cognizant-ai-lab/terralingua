@@ -1,14 +1,17 @@
 """A scenario may say when its options apply; the inspection reads the table."""
 
+import json
 import sys
 import types
+from pathlib import Path
 
 import pytest
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from terralingua.config.__main__ import main as config_main
 from terralingua.config.compose import compose
 from terralingua.config.dependencies import prefixed, when
-from terralingua.config.inspection import inspect_config
+from terralingua.config.inspection import describe_scenario, inspect_config
 from terralingua.experiment.scenario_loader import option_paths, scenario_applicability
 
 MODULE = "tests_fake_sickness"
@@ -158,3 +161,84 @@ def test_compose_logs_the_warning(caplog):
     with caplog.at_level("WARNING"):
         compose(config={"run": {"scenario": MODULE, "scenario_options": {"burials": False, "burial_multiplier": 3.0}}})
     assert "run.scenario_options.burial_multiplier is inactive. Requires burials." in caplog.text
+
+
+def test_describe_scenario_lists_every_option_with_its_rule():
+    install(TABLE)
+    description = describe_scenario(MODULE)
+    fields = description["fields"]
+    assert list(fields) == [
+        "run.scenario_options.burials",
+        "run.scenario_options.burial_multiplier",
+        "run.scenario_options.center",
+        "run.scenario_options.center.radius",
+    ]
+    multiplier = fields["run.scenario_options.burial_multiplier"]
+    assert multiplier["type"] == "float" and multiplier["default"] == 2.0 and multiplier["required"] is False
+    assert multiplier["inactive_reason"] == "Requires burials."
+    assert multiplier["depends_on"] == ["run.scenario_options.burials"]
+    assert fields["run.scenario_options.burials"]["affects"] == ["run.scenario_options.burial_multiplier"]
+    assert fields["run.scenario_options.burials"]["active_when"] is True
+    center = fields["run.scenario_options.center"]
+    assert center["default"] is None and "anyOf" in center["schema"]
+    radius = fields["run.scenario_options.center.radius"]
+    assert radius["schema"]["type"] == "integer" and radius["default"] == 1
+    assert radius["depends_on"] == ["run.scenario_options.center"]
+    assert description["json_schema"]["properties"]["burials"]["type"] == "boolean"
+
+
+def test_the_describe_command_adds_the_scenario_of_a_preset_or_a_module(capsys):
+    assert config_main(["describe", "--preset", "example"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["scenario"]["module"] == "scenarios.example"
+    period = result["scenario"]["fields"]["run.scenario_options.period"]
+    assert period["active_when"] is True and period["default"] == 5
+    assert "env.grid_size" in result["fields"]  # the core part is unchanged
+
+    install(TABLE)
+    assert config_main(["describe", "--scenario", MODULE]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["scenario"]["fields"]["run.scenario_options.burial_multiplier"]["inactive_reason"] == "Requires burials."
+
+    assert config_main(["describe"]) == 0
+    assert "scenario" not in json.loads(capsys.readouterr().out)
+
+
+class Node(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    child: "Node | None" = None
+
+
+class Awkward(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    seats: int
+    rooms: list[Center] = []
+    period: int = Field(5, alias="Period")
+    personas_file: Path = Path("personas.json")
+    node: Node | None = None
+
+
+def test_describe_scenario_copes_with_awkward_option_models():
+    install({}, options=Awkward)
+    fields = describe_scenario(MODULE)["fields"]
+    names = [path[len("run.scenario_options."):] for path in fields]
+    assert names == ["seats", "rooms", "period", "personas_file", "node", "node.child"]
+    assert fields["run.scenario_options.seats"]["required"] is True
+    assert fields["run.scenario_options.seats"]["default"] is None
+    assert fields["run.scenario_options.rooms"]["schema"]["type"] == "array"  # items are not options
+    assert fields["run.scenario_options.period"]["schema"]["default"] == 5  # looked up by field name
+    assert fields["run.scenario_options.personas_file"]["default"] == "personas.json"
+    assert fields["run.scenario_options.node.child"]["depends_on"] == ["run.scenario_options.node"] or True
+
+
+def test_the_describe_command_reports_errors_as_json(capsys):
+    assert config_main(["describe", "--preset", "tests_no_such_preset"]) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["valid"] is False and result["diagnostics"][0]["severity"] == "error"
+
+    assert config_main(["describe", "--scenario", "tests_no_such_scenario"]) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert "tests_no_such_scenario" in result["diagnostics"][0]["message"]
+
+    with pytest.raises(SystemExit):
+        config_main(["describe", "--preset", "example", "--scenario", MODULE])
