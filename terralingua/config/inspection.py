@@ -6,7 +6,7 @@ import json
 from functools import lru_cache
 
 from jsonschema import Draft202012Validator
-from pydantic import TypeAdapter
+from pydantic import BaseModel, TypeAdapter
 
 from terralingua.config.dependencies import (
     APPLICABILITY,
@@ -30,7 +30,10 @@ from terralingua.experiment.scenario_loader import (
     OPTIONS_PREFIX,
     ScenarioImportError,
     flatten_options,
+    nested_models,
     scenario_applicability,
+    scenario_module,
+    scenario_table,
 )
 
 FORMAT_VERSION = 1
@@ -147,6 +150,81 @@ def _description() -> dict:
 def describe() -> dict:
     """Return a versioned contract without importing a runner or opening services."""
     return copy.deepcopy(_description())
+
+
+def _option_default(field):
+    if field.is_required():
+        return None
+    default = _field_default(field)
+    try:
+        return TypeAdapter(field.annotation).dump_python(default, mode="json")
+    except (TypeError, ValueError):
+        return str(default)
+
+
+def _referenced(fragment: dict, defs: dict) -> list:
+    """The schemas a field fragment points at, directly or through a union."""
+    found = []
+    if "$ref" in fragment:
+        found.append(defs.get(fragment["$ref"].rsplit("/", 1)[-1], {}))
+    for key in ("anyOf", "oneOf", "allOf"):
+        for member in fragment.get(key, []):
+            found.extend(_referenced(member, defs))
+    return found
+
+
+def _scenario_fields(model: type[BaseModel], properties: dict, defs: dict, parent: str = "", seen: frozenset = frozenset()):
+    """Yield (dotted option name, field entry) for a scenario's options model."""
+    seen = seen | {model}
+    for name, field in model.model_fields.items():
+        path = f"{parent}{name}"
+        fragment = properties.get(name, {})
+        yield path, {
+            "type": _type_str(field.annotation),
+            "schema": copy.deepcopy(fragment),
+            "default": _option_default(field),
+            "required": field.is_required(),
+            "description": field.description or "",
+        }
+        for nested in nested_models(field.annotation):
+            if nested in seen:
+                continue
+            for schema in _referenced(fragment, defs):
+                if schema.get("title") == nested.__name__:
+                    yield from _scenario_fields(
+                        nested, schema.get("properties", {}), defs, f"{path}.", seen
+                    )
+                    break
+
+
+def describe_scenario(module_path: str) -> dict:
+    """The option fields of a scenario, with their applicability, under run.scenario_options.
+
+    Raises ScenarioImportError when the module cannot be imported, ValueError
+    when its applicability table is wrong, and pydantic's schema errors when an
+    option type has no JSON Schema.
+    """
+    module = scenario_module(module_path)
+    applicability = scenario_table(module)
+    json_schema = module.Options.model_json_schema(by_alias=False)
+    fields = {}
+    entries = _scenario_fields(module.Options, json_schema.get("properties", {}), json_schema.get("$defs", {}))
+    for path, entry in entries:
+        full = OPTIONS_PREFIX + path
+        condition, reason = applicability.get(full, (True, ""))
+        fields[full] = {
+            "path": full,
+            **entry,
+            "active_when": condition,
+            "inactive_reason": reason,
+            "depends_on": dependencies(condition),
+            "affects": [],
+        }
+    for path, field in fields.items():
+        for dependency in field["depends_on"]:
+            if dependency in fields:
+                fields[dependency]["affects"].append(path)
+    return {"module": module_path, "json_schema": json_schema, "fields": fields}
 
 
 def _normalized_requested(requested: dict, defaults: dict) -> dict:
