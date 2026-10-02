@@ -12,7 +12,11 @@ from terralingua.config.__main__ import main as config_main
 from terralingua.config.compose import compose
 from terralingua.config.dependencies import prefixed, when
 from terralingua.config.inspection import describe_scenario, inspect_config
-from terralingua.experiment.scenario_loader import option_paths, scenario_applicability
+from terralingua.experiment.scenario_loader import (
+    option_paths,
+    scenario_applicability,
+    scenario_tool,
+)
 
 MODULE = "tests_fake_sickness"
 
@@ -242,3 +246,16 @@ def test_the_describe_command_reports_errors_as_json(capsys):
 
     with pytest.raises(SystemExit):
         config_main(["describe", "--preset", "example", "--scenario", MODULE])
+
+
+def test_describe_scenario_reports_the_tools_a_scenario_ships():
+    install(TABLE)
+    assert describe_scenario(MODULE)["tools"] == {"viewer": None, "anthropologist": None}
+    tools = describe_scenario("scenarios.example")["tools"]
+    assert tools == {"viewer": "scenarios.example.viewer", "anthropologist": None}
+
+
+def test_a_tool_must_be_runnable_as_a_module():
+    assert scenario_tool("terralingua", "config") == "terralingua.config"  # has a __main__
+    assert scenario_tool("terralingua", "agents") is None  # a package without one
+    assert scenario_tool("terralingua", "nothing_here") is None

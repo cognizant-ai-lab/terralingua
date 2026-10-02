@@ -26,6 +26,7 @@ class CheckpointManager:
         last_spawn_idx: int,
         env_outs: dict,
         run_id: str = "",
+        personas_given: int = 0,
     ):
         ckpt_data = {}
         ckpt_data["ts"] = ts
@@ -36,6 +37,7 @@ class CheckpointManager:
         for agent_tag, agent in agents.items():
             ckpt_data["agents"][agent_tag] = agent.get_state_ckpt()
         ckpt_data["last_spawn_idx"] = last_spawn_idx
+        ckpt_data["personas_given"] = personas_given
 
         # Serialize synchronously (no await = no context switches, consistent snapshot),
         # then write the bytes to disk in a thread so the event loop stays responsive.

@@ -61,6 +61,26 @@ Successful evaluation exits with status 0.
 Invalid settings exit with status 2.
 Argument syntax errors also use status 2 and show usage instructions.
 
+List the presets, with their descriptions and locations:
+
+```sh
+python -m terralingua.config presets
+```
+
+List the artifact types a run can seed, with the parameters each type adds. With a preset, the types its scenario registers appear too:
+
+```sh
+python -m terralingua.config artifact-types --preset example
+```
+
+Print the installed package version:
+
+```sh
+python -m terralingua.config version
+```
+
+Every command prints one JSON object. A failure prints `{"valid": false, "diagnostics": [...]}` and exits with status 2.
+
 ## Composition
 
 Values apply in this order:
@@ -89,7 +109,7 @@ Builtin instruction names remain unchanged.
 Paths in explicit config and overrides use the current working directory.
 
 Social graphs do not support natural food.
-They default `food_mechanism` to false and reject an explicit true value.
+They default `food_mechanism` to false and resolve an explicit true value to false. The evaluation reports it as a normalization.
 Their energy fees, rewards, transfers, and reproduction still work.
 
 Set `internal_memory_size=0` to disable private memory.

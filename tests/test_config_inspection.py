@@ -188,14 +188,20 @@ def test_machine_interface_writes_only_json(command, payload, code):
         assert result["valid"] is (code == 0)
 
 
-def test_social_food_is_disabled_by_default_and_cannot_be_enabled():
+def test_social_food_is_disabled_by_default_and_ignored_when_enabled():
     result = evaluate(overrides={"world_type": "social_graph"})
     assert result["valid"]
     assert result["resolved"]["env"]["food_mechanism"] is False
     assert result["fields"]["env.food_mechanism"]["active"] is False
     assert result["derived"]["energy_death"] is False
-    assert not evaluate(overrides={"world_type": "social_graph", "food_mechanism": True})["valid"]
     assert describe()["fields"]["env.food_mechanism"]["default_when"]["value"] is False
+    enabled = evaluate(overrides={"world_type": "social_graph", "food_mechanism": True})
+    assert enabled["valid"]
+    assert enabled["resolved"]["env"]["food_mechanism"] is False
+    [change] = enabled["normalizations"]
+    assert change["field"] == "env.food_mechanism"
+    assert change["requested"] is True and change["effective"] is False
+    assert any(d["code"] == "normalized_setting" for d in enabled["diagnostics"])
 
 
 def test_nonfinite_values_from_presets_are_reported_safely(monkeypatch):
@@ -220,3 +226,41 @@ def test_normal_launch_composition_reports_inactive_values(caplog):
 def test_initial_tag_collision_checks_numeric_prefix_suffixes(prefix, humans, valid):
     result = evaluate(overrides={"agents_name_prefix": prefix, "init_agents": 1, "init_human_agents": humans})
     assert result["valid"] is valid
+
+
+def run_config_command(*args):
+    out = subprocess.run(
+        [sys.executable, "-m", "terralingua.config", *args], capture_output=True, text=True, check=False
+    )
+    return out.returncode, json.loads(out.stdout)
+
+
+def test_cli_lists_presets_with_their_locations():
+    code, result = run_config_command("presets")
+    assert code == 0
+    presets = {p["name"]: p for p in result["presets"]}
+    assert presets["core"]["location"] == "(built-in)"
+    assert presets["grid_baseline"]["description"]
+    assert set(presets["core"]) == {"name", "description", "location"}
+
+
+def test_cli_prints_the_package_version():
+    code, result = run_config_command("version")
+    assert code == 0
+    assert result["version"]
+
+
+def test_cli_lists_artifact_types_with_their_parameters():
+    code, result = run_config_command("artifact-types")
+    assert code == 0
+    types = {t["name"]: t for t in result["artifact_types"]}
+    assert types["text"]["creatable"] is True
+    assert types["text"]["params"] == ["max_tokens"]
+    assert all(set(t) == {"name", "description", "creatable", "params"} for t in types.values())
+    code, result = run_config_command("artifact-types", "--preset", "example")
+    assert code == 0
+    assert "shelter" in {t["name"] for t in result["artifact_types"]}
+    code, result = run_config_command("artifact-types", "--preset", "no_such_preset")
+    assert code == 2
+    assert result["valid"] is False
+    assert "no_such_preset" in result["diagnostics"][0]["message"]

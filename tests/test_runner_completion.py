@@ -35,6 +35,8 @@ def make_runner(tmp_path, *, fail_on=None, max_steps=2):
         stop_on_external_solved=False,
     ))
     runner.start_ts = 40
+    runner.personas = []
+    runner.personas_given = 0
     runner._use_redis = False
     runner.dashboard_manager = None
     runner.terminate = False

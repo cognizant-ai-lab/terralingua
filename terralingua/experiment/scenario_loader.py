@@ -1,6 +1,7 @@
 """Load the scenario named by run.scenario and build its mechanics."""
 
 import importlib
+import importlib.util
 import sys
 from pathlib import Path
 from types import UnionType
@@ -100,6 +101,22 @@ def scenario_module(module_path: str):
     if not hasattr(module, "Options"):
         raise ValueError(f"Scenario module '{module_path}' has no 'Options'")
     return module
+
+
+SCENARIO_TOOLS = ("viewer", "anthropologist")
+
+
+def scenario_tool(module_path: str, name: str) -> str | None:
+    """The module of a tool the scenario ships (`<scenario>.viewer`), or None.
+
+    A tool is a subpackage runnable as `python -m <module> --logs <folder> --port <n>`.
+    """
+    tool = f"{module_path}.{name}"
+    try:
+        runnable = importlib.util.find_spec(tool) and importlib.util.find_spec(f"{tool}.__main__")
+    except ModuleNotFoundError:
+        return None
+    return tool if runnable else None
 
 
 def scenario_table(module) -> dict:

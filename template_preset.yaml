@@ -13,6 +13,7 @@ config:
   agent:
     agents_name_prefix: "being"  # str. Prefix for agent names (e.g. being0, being1)
     scenario_specific_instructions: "none"  # str. Scenario instructions injected into the system prompt: a builtin name ['base', 'creative', 'none', 'survival'] or a path to an instructions file (a Markdown file inside the scenario folder, rendered with Jinja).
+    personas_path: null  # str | None. JSON file with personas for the first beings, at the initial population and at respawns, in creation order. Each entry is the persona text, or an object with 'persona', an optional 'name' and an optional 'count' (default 1). A persona from the scenario wins over the file.
     genome: "ocean_5"  # str. Agent genome type
     internal_memory_size: 500  # int. Internal memory token budget. Zero disables private memory.
     max_history: 10  # int. Max number of interactions stored per agent
@@ -31,7 +32,7 @@ config:
     max_artifact_tokens: 500  # int. Maximum token length of a text artifact's payload
     drop_food_on_death: true  # bool. Drop food at agent position on death
     food_decay_rate: 0.05  # float. Food decay rate
-    food_mechanism: true  # bool. Enable natural food generation, decay, and one energy of upkeep per step. Unsupported in social graphs.
+    food_mechanism: true  # bool. Enable natural food generation, decay, and one energy of upkeep per step. Ignored in social graphs.
     energy_death: null  # bool | None. Agents die when energy reaches 0. Default: only when food_mechanism is on
     food_spawn_rate: 10  # int. Food spawn per step
     food_zones: 2  # int | list[tuple[int, int]] | list[str] | None. Food zones: a positive count, grid x,y coordinates, graph node names, or null for uniform placement

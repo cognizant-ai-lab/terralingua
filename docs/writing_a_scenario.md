@@ -125,9 +125,29 @@ class ShelterArtifact(Artifact):
 
 A preset can also seed artifacts from JSON files with `env.init_artifacts_path`. Each entry names the `art_type` and may carry a `params` dict for the extra arguments.
 
+## A viewer for the runs
+
+A scenario may ship tools that read a run folder: a viewer, an anthropologist. Put each one in a subpackage named `viewer` or `anthropologist`, runnable as
+
+```
+python -m <scenario>.viewer --logs <folder> --port <n>
+```
+
+`--logs` is the folder that holds the runs. `--port` is the port of the page the tool serves. `describe --preset` reports the tools a scenario ships under `scenario.tools`, so the launcher can show a button that starts them. The example scenario has a small viewer in this shape.
+
 ## Personas and names
 
 `identity(env, tag)` runs once per new being, at the initial population and at every respawn. It sees the world, so it can count what it has already handed out and keep the record in `self.state`. Return a `persona` to append text to the being's personality, a `name` to replace the generated one, or both. The being's checkpoint keeps them, so resume does not call the hook again.
+
+A preset can also hand out personas from a file with `agent.personas_path`, without any code. The file holds a JSON list. An entry is the persona text, or an object with `persona`, an optional `name` and an optional `count` (default 1). The runner gives the entries to new beings in creation order, at the initial population and at respawns, until the list is used up. Children born from a `spawn` action take none. A persona returned by a mechanic wins over the file. A name applies only to an entry with count 1, and a name already in use is not applied.
+
+```json
+[
+  {"persona": "You are a healer. You look for sick beings and treat them.", "name": "Ada"},
+  {"persona": "You are a farmer. You stay near the fields.", "count": 3},
+  "You doubt everything you hear."
+]
+```
 
 ## The beings' instructions
 

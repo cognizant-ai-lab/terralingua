@@ -40,7 +40,7 @@ def topology(name: str) -> dict:
 GROUPS = {
     "Identity": [
         "agent.agents_name_prefix", "agent.genome", "agent.random_names",
-        "agent.scenario_specific_instructions",
+        "agent.scenario_specific_instructions", "agent.personas_path",
     ],
     "Memory": [
         "agent.internal_memory_size", "agent.max_history",
@@ -253,7 +253,7 @@ CONSTRAINTS = [
     {
         "id": "social_food",
         "fields": ["env.world_type", "env.food_mechanism"],
-        "description": "Social graphs do not support natural food. Energy remains available.",
+        "description": "Social graphs ignore natural food: food_mechanism resolves to false. Energy remains available.",
     },
     {
         "id": "initial_tag_collision",

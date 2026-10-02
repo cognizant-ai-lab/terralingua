@@ -1,3 +1,4 @@
+import inspect
 from abc import abstractmethod
 from collections import defaultdict
 from typing import Any, Dict, List, Set, Tuple
@@ -28,6 +29,28 @@ def register_artifact_type(name: str):
 def creatable_types() -> Dict[str, str]:
     """Type names agents may create, with their descriptions."""
     return {name: cls.description for name, cls in ARTIFACT_TYPES.items() if cls.creatable}
+
+
+def describe_types() -> List[dict]:
+    """Every registered type: name, description, whether beings may create it, and its own parameters.
+
+    The parameters are the constructor arguments a type adds to the common ones.
+    A seed file passes them under "params".
+    """
+    common = set(inspect.signature(Artifact.__init__).parameters)
+    out = []
+    for name, cls in sorted(ARTIFACT_TYPES.items()):
+        params = [
+            p for p in inspect.signature(cls.__init__).parameters
+            if p not in common and p not in ("args", "kwargs")
+        ]
+        out.append({
+            "name": name,
+            "description": cls.description,
+            "creatable": bool(cls.creatable),
+            "params": params,
+        })
+    return out
 
 
 ArtifactCreationError = ValueError
