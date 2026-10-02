@@ -1,12 +1,12 @@
 """Tests for the pydantic config system: models, composition, and presets."""
 
-import os
+from pathlib import Path
 
 import pytest
 
 from terralingua.config.compose import compose, deep_merge, route_overrides
 from terralingua.config.models import EnvConfig, ExperimentConfig, GraphConfig
-from terralingua.config.presets import list_presets
+from terralingua.config.presets import _resolve_paths, list_presets
 
 
 @pytest.mark.parametrize(
@@ -62,10 +62,17 @@ def test_compose_precedence_and_coercion():
 def test_scenario_presets_discovered_and_paths_resolved():
     names = {name for name, _, _ in list_presets()}
     assert {"example", "demo", "paper_core"} <= names
-    c = compose("example")
-    # path-valued keys are resolved to existing absolute files
-    assert os.path.isabs(c.agent.scenario_specific_instructions)
-    assert os.path.exists(c.agent.scenario_specific_instructions)
+    assert compose("example").run.scenario == "scenarios.example"
+    # path-valued keys resolve against the preset folder; builtin names stay as they are
+    resolved = _resolve_paths(
+        {"agent": {"personas_path": "people.json", "scenario_specific_instructions": "none"},
+         "env": {"init_artifacts_path": "seeds", "grid_size": 5}},
+        Path("/presets/here"),
+    )
+    assert resolved["agent"]["personas_path"] == "/presets/here/people.json"
+    assert resolved["agent"]["scenario_specific_instructions"] == "none"
+    assert resolved["env"]["init_artifacts_path"] == "/presets/here/seeds"
+    assert resolved["env"]["grid_size"] == 5
 
 
 @pytest.mark.parametrize("invalid", [True])

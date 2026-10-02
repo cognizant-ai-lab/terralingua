@@ -300,6 +300,15 @@ class AgentConfig(ConfigModel):
             "(a Markdown file inside the scenario folder, rendered with Jinja)."
         ),
     )
+    personas_path: str | None = Field(
+        default=None,
+        description=(
+            "JSON file with personas for the first beings, at the initial population and at "
+            "respawns, in creation order. Each entry is the persona text, or an object with "
+            "'persona', an optional 'name' and an optional 'count' (default 1). A persona "
+            "from the scenario wins over the file."
+        ),
+    )
     genome: str = Field(default="ocean_5", json_schema_extra={"enum": list(AVAILABLE_GENOMES)}, description="Agent genome type")
     internal_memory_size: int = Field(
         ge=0,
@@ -355,6 +364,13 @@ class AgentConfig(ConfigModel):
             )
         return v
 
+    @field_validator("personas_path")
+    @classmethod
+    def _validate_personas_path(cls, v: str | None) -> str | None:
+        if v is not None and not Path(v).is_file():
+            raise ValueError(f"personas_path must be a path to a JSON file, got {v}")
+        return v
+
     @field_validator("scenario_specific_instructions")
     @classmethod
     def _validate_instructions(cls, v: str) -> str:
@@ -393,7 +409,7 @@ class EnvConfig(ConfigModel):
         default=True, description="Drop food at agent position on death"
     )
     food_decay_rate: float = Field(ge=0, le=1, default=0.05, description="Food decay rate")
-    food_mechanism: bool = Field(default=True, description="Enable natural food generation, decay, and one energy of upkeep per step. Unsupported in social graphs.")
+    food_mechanism: bool = Field(default=True, description="Enable natural food generation, decay, and one energy of upkeep per step. Ignored in social graphs.")
     energy_death: bool | None = Field(
         default=None,
         description="Agents die when energy reaches 0. Default: only when food_mechanism is on",
@@ -546,10 +562,8 @@ class EnvConfig(ConfigModel):
     @model_validator(mode="after")
     def _resolve_couplings(self) -> "EnvConfig":
         if self.world_type == "social_graph" and self.food_mechanism:
-            raise ValueError(
-                "Social graphs do not support natural food. Set food_mechanism=false. "
-                "Energy, fees, rewards, and transfers remain available."
-            )
+            # The setting does not apply there; the world ignores it rather than failing.
+            self.food_mechanism = False
         if self.min_agents > self.init_agents:
             raise ValueError("min_agents cannot be greater than init_agents")
         # A HOCON agent network forces a graph world (social_graph if the user

@@ -21,6 +21,7 @@ from wonderwords import RandomWord
 from terralingua.agents import agent_logger as _agent_logger_mod
 from terralingua.agents.human_agent import HumanAgent
 from terralingua.agents.llm_agent import LLMAgent
+from terralingua.agents.personas import load_personas
 from terralingua.agents.remote_agent import RemoteAgent
 from terralingua.config.models import ExperimentConfig
 from terralingua.environment.env_logger import Event
@@ -206,6 +207,8 @@ class SimulationRunner(ExecutionReceiptsMixin):
         self._use_redis: bool = False  # Set to True in Redis/multi-process mode
         self._cmd_loop_task: asyncio.Task | None = None
         self.last_spawn_idx = -1
+        self.personas = load_personas(self.params.agent.personas_path) if self.params.agent.personas_path else []
+        self.personas_given = 0
         self.last_actions: dict = {}
         self.pre_step_obs: dict = {}
         self.dead_agent_traits: dict[str, dict] = {}
@@ -359,6 +362,18 @@ class SimulationRunner(ExecutionReceiptsMixin):
         if agent_tag in self.obs and isinstance(self.obs[agent_tag], dict):
             self.obs[agent_tag]["time"] = sampled
         return sampled
+
+    def _identity_for(self, tag: str) -> dict:
+        """Name and persona for a new being: the scenario's answer first, then the personas file."""
+        identity = self.env.agent_identity(tag)
+        if not identity.get("persona") and self.personas_given < len(self.personas):
+            entry = self.personas[self.personas_given]
+            self.personas_given += 1
+            identity["persona"] = entry["persona"]
+            name = entry.get("name")
+            if name and not identity.get("name") and name not in self.env.agent_names.values():
+                identity["name"] = name
+        return identity
 
     def _make_llm_agent(self, tag: str, name: str, genome: Genome, persona: str = "") -> LLMAgent:
         return LLMAgent(
@@ -643,7 +658,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
                         used_names.add(agent_name)
                     else:
                         agent_name = agent_tag
-                    identity = self.env.agent_identity(agent_tag)
+                    identity = self._identity_for(agent_tag)
                     agent_name = identity.get("name") or agent_name
                     used_names.add(agent_name)
                     self.agents[agent_tag] = self._make_llm_agent(
@@ -692,6 +707,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
 
         self._make_env()
         self.last_spawn_idx = self.ckpt["last_spawn_idx"]
+        self.personas_given = self.ckpt.get("personas_given", 0)
 
         # Load agents
         for agent_tag, agent_ckpt in self.ckpt["agents"].items():
@@ -914,6 +930,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
             env=self.env,
             agents=self.agents,
             last_spawn_idx=self.last_spawn_idx,
+            personas_given=self.personas_given,
             run_id=self._run_id,
             env_outs={
                 "obs": self.obs,
@@ -1148,7 +1165,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
                 new_agent_name = _random_agent_name(set(self.env.agent_names.values()))
             else:
                 new_agent_name = new_agent_tag
-            identity = self.env.agent_identity(new_agent_tag)
+            identity = self._identity_for(new_agent_tag)
             new_agent_name = identity.get("name") or new_agent_name
 
             genome_cls = get_genome_class(self.params.agent.genome)

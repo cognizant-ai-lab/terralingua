@@ -28,12 +28,14 @@ from terralingua.config.models import (
 )
 from terralingua.experiment.scenario_loader import (
     OPTIONS_PREFIX,
+    SCENARIO_TOOLS,
     ScenarioImportError,
     flatten_options,
     nested_models,
     scenario_applicability,
     scenario_module,
     scenario_table,
+    scenario_tool,
 )
 
 FORMAT_VERSION = 1
@@ -224,7 +226,12 @@ def describe_scenario(module_path: str) -> dict:
         for dependency in field["depends_on"]:
             if dependency in fields:
                 fields[dependency]["affects"].append(path)
-    return {"module": module_path, "json_schema": json_schema, "fields": fields}
+    return {
+        "module": module_path,
+        "json_schema": json_schema,
+        "fields": fields,
+        "tools": {name: scenario_tool(module_path, name) for name in SCENARIO_TOOLS},
+    }
 
 
 def _normalized_requested(requested: dict, defaults: dict) -> dict:

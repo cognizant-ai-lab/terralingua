@@ -139,6 +139,8 @@ def test_minimum_population_arrivals_keep_founder_energy(tmp_path, cost):
     world._kill("a")
     world._kill("b")
     runner = SimulationRunner.__new__(SimulationRunner)
+    runner.personas = []
+    runner.personas_given = 0
     runner.params = ExperimentConfig(agent={"genome": "no_traits"}, env={
         "world_type": "social_graph", "init_agents": 1, "min_agents": 1,
         "init_agent_energy": 80, "reproduction_cost": cost,
@@ -202,6 +204,8 @@ def test_runner_resume_refreshes_legacy_spawn_menus_without_changing_balances(tm
         "init_agent_energy": 80, "reproduction_cost": 20,
     })
     runner = SimulationRunner.__new__(SimulationRunner)
+    runner.personas = []
+    runner.personas_given = 0
     runner.agents = {}
     runner.params = params
     runner.checkpointer = SimpleNamespace(

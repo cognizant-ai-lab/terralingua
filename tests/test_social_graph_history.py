@@ -138,6 +138,8 @@ def test_death_and_admin_sever_leave_no_dangling_edges(world, tmp_path):
     world.agent_time["a3"] = 1
     world.step({})
     runner = SimulationRunner.__new__(SimulationRunner)
+    runner.personas = []
+    runner.personas_given = 0
     runner.env = world
     u, v = next((u, v) for u in world.world_graph.all_nodes()
                 for v in world.world_graph.neighbors(u))
@@ -230,6 +232,8 @@ def test_recording_write_errors_propagate(world, tmp_path):
 
 def test_non_social_runner_does_not_require_recorder_attributes():
     runner = SimulationRunner.__new__(SimulationRunner)
+    runner.personas = []
+    runner.personas_given = 0
     runner.env = SimpleNamespace()
     runner._record_social_graph_snapshot()
     assert not hasattr(runner, "_social_graph_recorder")

@@ -43,6 +43,7 @@ _PATH_FIELDS = {
     ("env", "graph", "agent_network_hocon_path"),
     ("env", "roles_hocon_path"),
     ("agent", "scenario_specific_instructions"),
+    ("agent", "personas_path"),
     ("env", "init_artifacts_path"),
     ("env", "affordances_file_path"),
     ("env", "graph", "file_path"),

@@ -5,10 +5,14 @@ python -m terralingua.config describe --preset example
 python -m terralingua.config describe --scenario scenarios.example
 python -m terralingua.config evaluate --preset example
 python -m terralingua.config evaluate --config config.json --overrides '{"reproduction_cost": 10}'
+python -m terralingua.config presets
+python -m terralingua.config artifact-types --preset example
+python -m terralingua.config version
 Use "-" as a file path to read JSON from standard input.
 """
 
 import argparse
+import importlib.metadata
 import json
 import sys
 from pathlib import Path
@@ -17,6 +21,9 @@ from terralingua.config.compose import compose
 from terralingua.config.evaluation import evaluate
 from terralingua.config.inspection import describe, describe_scenario
 from terralingua.config.json_input import read_json
+from terralingua.config.presets import list_presets
+from terralingua.environment.artifact import describe_types
+from terralingua.experiment.scenario_loader import scenario_module
 
 
 def _read_json(value: str, *, file: bool = False):
@@ -38,6 +45,10 @@ def main(argv=None) -> int:
     evaluate_parser.add_argument("--preset")
     evaluate_parser.add_argument("--config", help="Nested configuration JSON file, or - for stdin.")
     evaluate_parser.add_argument("--overrides", help="Flat JSON overrides, or - for stdin.")
+    subparsers.add_parser("presets", help="List the presets: built-ins plus the files under the working directory.")
+    artifacts_parser = subparsers.add_parser("artifact-types", help="List the artifact types a run can seed.")
+    artifacts_parser.add_argument("--preset", help="Also load this preset's scenario, for the types it registers.")
+    subparsers.add_parser("version", help="Print the installed package version.")
     args = parser.parse_args(argv)
     try:
         if args.command == "describe":
@@ -49,6 +60,18 @@ def main(argv=None) -> int:
                 )
             elif args.scenario:
                 result["scenario"] = describe_scenario(args.scenario)
+        elif args.command == "presets":
+            result = {"presets": [
+                {"name": name, "description": description, "location": location}
+                for name, description, location in list_presets()
+            ]}
+        elif args.command == "artifact-types":
+            scenario = compose(args.preset).run.scenario if args.preset else None
+            if scenario:
+                scenario_module(scenario)
+            result = {"artifact_types": describe_types()}
+        elif args.command == "version":
+            result = {"version": importlib.metadata.version("terralingua")}
         else:
             if args.config == "-" and args.overrides == "-":
                 parser.error("Only one input can read standard input.")
