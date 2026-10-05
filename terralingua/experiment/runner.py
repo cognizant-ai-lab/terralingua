@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Type
 
 import numpy as np
 from PIL import Image
-from wonderwords import RandomWord
+from faker import Faker
 
 from terralingua.agents import agent_logger as _agent_logger_mod
 from terralingua.agents.human_agent import HumanAgent
@@ -124,13 +124,13 @@ def render_server_instructions(instructions: dict[str, str]) -> str:
     )
 
 
-_rw = RandomWord()
+_fake = Faker()
 
 
 def _random_agent_name(existing: set[str]) -> str:
-    """Return a unique random-word name not already in *existing*."""
+    """Return a human first name not already in *existing*."""
     for _ in range(100):
-        name = _rw.word(word_max_length=8)
+        name = _fake.first_name()
         if name not in existing:
             return name
     # Extremely unlikely fallback
