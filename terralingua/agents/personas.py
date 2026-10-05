@@ -10,7 +10,8 @@ def load_personas(path: str | Path) -> list[dict]:
     An entry is the persona text, or an object with "persona", an optional
     "name" and an optional "count" (default 1). A name applies only to an entry
     with count 1, and no two entries may carry the same name, so every being
-    keeps a distinct name.
+    keeps a distinct name. Any other key of an entry, such as a role, stays
+    with each persona for the scenario to read.
     """
     with open(path) as f:
         data = json.load(f)
@@ -29,7 +30,8 @@ def load_personas(path: str | Path) -> list[dict]:
         name = entry.get("name")
         if name is not None and not isinstance(name, str):
             raise ValueError(f"{path}: entry {index} has a 'name' that is not text")
-        persona = {"persona": entry["persona"].strip()}
+        persona = {key: value for key, value in entry.items() if key not in ("name", "count")}
+        persona["persona"] = entry["persona"].strip()
         if count == 1 and name:
             if name in names:
                 raise ValueError(f"{path}: the name {name!r} appears twice")

@@ -71,3 +71,9 @@ class Mechanic:
 
     def identity(self, env, tag: str) -> dict | None:
         return None
+
+    def on_identity(self, env, tag: str, identity: dict) -> dict | None:
+        """The identity a new agent ends up with: its entry from the personas file, other
+        keys such as a role included, or what identity() answered. Return keys that
+        complete it, or None to leave it."""
+        return None

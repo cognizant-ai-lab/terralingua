@@ -1470,6 +1470,14 @@ class BaseWorld(RolesMixin, ABC):
                 return dict(identity)
         return {}
 
+    def agent_identity_settled(self, tag: str, identity: dict) -> dict:
+        """The identity of a new agent once its persona is settled, completed by every mechanic."""
+        for mechanic in self.mechanics:
+            extra = mechanic.on_identity(self, tag, identity)
+            if extra:
+                identity = {**identity, **{key: value for key, value in extra.items() if value}}
+        return identity
+
     def _mechanic_outcome(self, agent: str, action_name: str, params: dict) -> str | None:
         for mechanic in self.mechanics:
             outcome = mechanic.on_action(self, agent, action_name, params)

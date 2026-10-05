@@ -364,7 +364,11 @@ class SimulationRunner(ExecutionReceiptsMixin):
         return sampled
 
     def _identity_for(self, tag: str) -> dict:
-        """Name and persona for a new being: the scenario's answer first, then the personas file."""
+        """Name and persona for a new being: the scenario's answer first, then the personas file.
+
+        The entry's other keys, such as a role, travel with the persona, and every mechanic
+        sees the result through on_identity.
+        """
         identity = self.env.agent_identity(tag)
         if not identity.get("persona") and self.personas_given < len(self.personas):
             entry = self.personas[self.personas_given]
@@ -373,7 +377,10 @@ class SimulationRunner(ExecutionReceiptsMixin):
             name = entry.get("name")
             if name and not identity.get("name") and name not in self.env.agent_names.values():
                 identity["name"] = name
-        return identity
+            for key, value in entry.items():
+                if key not in ("persona", "name"):
+                    identity.setdefault(key, value)
+        return self.env.agent_identity_settled(tag, identity)
 
     def _make_llm_agent(self, tag: str, name: str, genome: Genome, persona: str = "") -> LLMAgent:
         return LLMAgent(

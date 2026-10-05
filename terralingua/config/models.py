@@ -306,7 +306,8 @@ class AgentConfig(ConfigModel):
             "JSON file with personas for the first beings, at the initial population and at "
             "respawns, in creation order. Each entry is the persona text, or an object with "
             "'persona', an optional 'name' and an optional 'count' (default 1). A persona "
-            "from the scenario wins over the file."
+            "from the scenario wins over the file. Other keys of an entry, such as a role, "
+            "travel with the persona to the scenario."
         ),
     )
     genome: str = Field(default="ocean_5", json_schema_extra={"enum": list(AVAILABLE_GENOMES)}, description="Agent genome type")
