@@ -16,7 +16,7 @@ dependencies = [
     "networkx",
     "pygame",
     "Pillow",
-    "Faker",
+    "faker",
     "requests",
     "tiktoken",
     "jinja2",
