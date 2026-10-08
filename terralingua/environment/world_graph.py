@@ -48,6 +48,10 @@ class WorldGraph:
     def has_edge(self, u: str, v: str) -> bool:
         return self._G.has_edge(u, v)
 
+    def edge_attrs(self, u: str, v: str) -> dict:
+        """Attributes of the directed edge u->v, or {} when there is none."""
+        return dict(self._G[u][v]) if self._G.has_edge(u, v) else {}
+
     def all_nodes(self) -> List[str]:
         return list(self._G.nodes)
 

@@ -98,6 +98,9 @@ class GraphConfig(ConfigModel):
     agent_network_bidirectional_edges: bool = Field(default=False, description="Add the reverse edge for each HOCON connection.")
     # --- custom ---
     custom_factory: str | None = Field(default=None, description="Import path for a custom topology factory.")
+    # --- movement ---
+    move_cost_attr: str | None = Field(default=None, description="Edge attribute that holds the energy cost of moving along that edge. Null charges nothing beyond the per-step upkeep.")
+    default_move_cost: int = Field(default=1, ge=0, description="Energy charged for an edge without the move_cost_attr attribute, when move_cost_attr is set.")
 
     @model_validator(mode="after")
     def _resolve_topology(self) -> "GraphConfig":

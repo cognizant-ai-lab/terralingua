@@ -38,6 +38,7 @@ class Event(Enum):
     ROLE_ASSIGNED = auto()
     ROLE_RELEASED = auto()
     AFFORDANCE_EFFECT = auto()
+    MOVE_COST = auto()
 
 
 class JSONLogger:

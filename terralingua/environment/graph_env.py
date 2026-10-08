@@ -183,8 +183,44 @@ class OpenGraphWorld(BaseWorld):
                 action="move", reason="no_edge", direction=move_target,
             )
         if new_node != current_node:
+            cost = self._move_cost(current_node, new_node)
+            if cost > 0 and self.agent_energy[agent] < cost:
+                infos[agent]["Move outcome"] = (
+                    f"Failed to move to {move_target}. The crossing costs {cost} energy "
+                    f"and you have {self.agent_energy[agent]:.0f}."
+                )
+                self.logger.log(
+                    time=self.step_count, event_type=Event.ACTION_REFUSED,
+                    agent_tag=agent, agent_name=self.agent_names[agent],
+                    action="move", reason="insufficient_energy", direction=move_target, cost=cost,
+                )
+                new_node = current_node
+            elif cost > 0:
+                self.agent_energy[agent] -= cost
+                infos[agent]["Move cost"] = f"Moving to {move_target} cost {cost} energy."
+                self.logger.log(
+                    time=self.step_count, event_type=Event.MOVE_COST,
+                    agent_tag=agent, agent_name=self.agent_names[agent],
+                    src=current_node, dst=move_target, cost=cost,
+                )
+        if new_node != current_node:
             self._update_agent_pos(agent=agent, new_pos=new_node)
         return new_node, infos
+
+    def _move_cost(self, src: str, dst: str) -> int:
+        """Energy charged for moving along src->dst.
+
+        Zero when ``graph.move_cost_attr`` is unset. Otherwise the edge's attribute of
+        that name, or ``graph.default_move_cost`` when the edge does not carry it.
+        """
+        attr = self.graph_cfg.move_cost_attr
+        if not attr:
+            return 0
+        value = self.world_graph.edge_attrs(src, dst).get(attr, self.graph_cfg.default_move_cost)
+        try:
+            return max(0, int(round(float(value))))
+        except (TypeError, ValueError):
+            return self.graph_cfg.default_move_cost
 
     def _get_food_weights(self):
         """Compute per-node spawn weights.
@@ -433,9 +469,14 @@ class OpenGraphWorld(BaseWorld):
         return "\n".join(lines)
 
     def _get_move_description(self, agent_tag: str) -> dict:
-        neighbor_nodes = self.world_graph.neighbors(self.agent_pos[agent_tag])
+        pos = self.agent_pos[agent_tag]
+        neighbor_nodes = self.world_graph.neighbors(pos)
+        description = ACTION_TEXT["move"]["description"]
+        if self.graph_cfg.move_cost_attr and neighbor_nodes:
+            costs = ", ".join(f"{n} ({self._move_cost(pos, n)})" for n in neighbor_nodes)
+            description += f" Energy cost of each crossing from here: {costs}. Staying costs nothing extra."
         return {
-            "description": ACTION_TEXT["move"]["description"],
+            "description": description,
             "params": {
                 "direction": {
                     "description": "Node ID of a directly connected neighbor to move to, or 'stay'.",

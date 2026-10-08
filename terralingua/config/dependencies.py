@@ -81,6 +81,7 @@ GROUPS = {
         "env.graph.scale_free_m", "env.graph.random_p", "env.graph.seed",
         "env.graph.file_path", "env.graph.custom_factory",
         "env.graph.agent_network_hocon_path", "env.graph.agent_network_bidirectional_edges",
+        "env.graph.move_cost_attr", "env.graph.default_move_cost",
     ],
     "Social connections": [
         "env.graph.max_connections", "env.graph.edge_decay_steps",
@@ -160,6 +161,7 @@ APPLICABILITY = {
     "env.graph.bipartite_n1": (topology("bipartite"), "Requires the bipartite topology."),
     "env.graph.bipartite_n2": (topology("bipartite"), "Requires the bipartite topology."),
     "env.graph.small_world_k": (topology("small_world"), "Requires the small-world topology."),
+    "env.graph.default_move_cost": (when("env.graph.move_cost_attr", type="string"), "Requires graph.move_cost_attr."),
     "env.graph.small_world_p": (topology("small_world"), "Requires the small-world topology."),
     "env.graph.scale_free_m": (topology("scale_free"), "Requires the scale-free topology."),
     "env.graph.random_p": (topology("random"), "Requires the random topology."),

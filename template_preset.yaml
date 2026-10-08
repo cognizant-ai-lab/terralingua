@@ -83,6 +83,8 @@ config:
       agent_network_hocon_path: null  # str | None. HOCON file defining founding agents and their connections.
       agent_network_bidirectional_edges: false  # bool. Add the reverse edge for each HOCON connection.
       custom_factory: null  # str | None. Import path for a custom topology factory.
+      move_cost_attr: null  # str | None. Edge attribute that holds the energy cost of moving along that edge. Null charges nothing beyond the per-step upkeep.
+      default_move_cost: 1  # int. Energy charged for an edge without the move_cost_attr attribute, when move_cost_attr is set.
   run:
     runner_class: null  # str | None. Optional scenario runner class, written as module:Class
     scenario: null  # str | None. Python module of the scenario to attach, for example scenarios.example. It exposes Options and build(options).

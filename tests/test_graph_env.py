@@ -642,3 +642,68 @@ class TestAffordanceStepIntegration:
         _, _, _, _, infos = env.step({"a0": {"action": "boost", "params": {}}})
         # Action was consumed — no artifact error
         assert "Artifact interaction result" not in infos["a0"]
+
+
+# ---------------------------------------------------------------------------
+# Edge move costs (graph.move_cost_attr / graph.default_move_cost)
+# ---------------------------------------------------------------------------
+
+def _cost_graph_file(tmp_path):
+    data = {
+        "nodes": [{"id": "A"}, {"id": "B"}, {"id": "C"}],
+        "edges": [
+            {"from": "A", "to": "B", "cost": 3}, {"from": "B", "to": "A", "cost": 3},
+            {"from": "B", "to": "C"}, {"from": "C", "to": "B"},
+        ],
+    }
+    path = tmp_path / "cost_graph.json"
+    path.write_text(json.dumps(data))
+    return str(path)
+
+
+def _cost_env(tmp_path, energy=100, **cfg):
+    gcfg = GraphConfig(topology="file", file_path=_cost_graph_file(tmp_path), hop_radius=1, **cfg)
+    e = OpenGraphWorld(graph_cfg=gcfg, init_agent_energy=energy, init_food=0, food_spawn_rate=0,
+                       log_path=tmp_path / "logs", headless=True, food_mechanism=False)
+    e.add_agent("a0", "Alice", "text", position="A")
+    e.restart_env(agent_poses={"a0": "A"})
+    return e
+
+
+class TestMoveCost:
+    def test_disabled_by_default(self, tmp_path):
+        e = _cost_env(tmp_path)
+        before = e.agent_energy["a0"]
+        e.step({"a0": {"action": "move", "params": {"direction": "B"}}})
+        assert e.agent_pos["a0"] == "B"
+        assert e.agent_energy["a0"] == before
+
+    def test_edge_attribute_is_charged(self, tmp_path):
+        e = _cost_env(tmp_path, move_cost_attr="cost")
+        before = e.agent_energy["a0"]
+        infos = e.step({"a0": {"action": "move", "params": {"direction": "B"}}})[-1]
+        assert e.agent_pos["a0"] == "B"
+        assert e.agent_energy["a0"] == before - 3
+        assert "3 energy" in infos["a0"]["Move cost"]
+
+    def test_default_cost_when_attribute_missing(self, tmp_path):
+        e = _cost_env(tmp_path, move_cost_attr="cost", default_move_cost=2)
+        e.step({"a0": {"action": "move", "params": {"direction": "B"}}})
+        before = e.agent_energy["a0"]
+        e.step({"a0": {"action": "move", "params": {"direction": "C"}}})  # B->C carries no cost attribute
+        assert e.agent_pos["a0"] == "C"
+        assert e.agent_energy["a0"] == before - 2
+
+    def test_stay_is_free_and_menu_shows_costs(self, tmp_path):
+        e = _cost_env(tmp_path, move_cost_attr="cost")
+        before = e.agent_energy["a0"]
+        e.step({"a0": {"action": "move", "params": {"direction": "stay"}}})
+        assert e.agent_energy["a0"] == before
+        assert "B (3)" in e.agent_avail_actions["a0"]["move"]["description"]
+
+    def test_refused_when_energy_is_short(self, tmp_path):
+        e = _cost_env(tmp_path, energy=2, move_cost_attr="cost")
+        infos = e.step({"a0": {"action": "move", "params": {"direction": "B"}}})[-1]
+        assert e.agent_pos["a0"] == "A"
+        assert e.agent_energy["a0"] == 2
+        assert "costs 3 energy" in infos["a0"]["Move outcome"]
