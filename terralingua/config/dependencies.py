@@ -51,7 +51,7 @@ GROUPS = {
     ],
     "Artifacts": [
         "agent.use_inventory", "env.artifact_creation_cost",
-        "env.allow_fixed_artifacts", "env.max_artifact_tokens", "env.inert_artifacts",
+        "env.allow_fixed_artifacts", "env.max_artifact_tokens", "env.inert_artifacts", "env.show_nearby_artifact_names",
         "env.init_artifacts_path", "env.use_library", "env.library_preview",
     ],
     "Communication": [
