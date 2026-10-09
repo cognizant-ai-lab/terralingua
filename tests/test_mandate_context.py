@@ -5,7 +5,10 @@ import copy
 import pytest
 
 from tests.test_social_graph_env import (
-    follow, grant_manager_powers, make_social_env, seed_n_agents,
+    follow,
+    grant_manager_powers,
+    make_social_env,
+    seed_n_agents,
 )
 
 

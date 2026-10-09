@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Type
 
 import numpy as np
-from PIL import Image
 from faker import Faker
+from PIL import Image
 
 from terralingua.agents import agent_logger as _agent_logger_mod
 from terralingua.agents.human_agent import HumanAgent
@@ -400,6 +400,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
             spawn_allowed=self.env.spawn_allowed,
             max_connections=getattr(self.env, "max_connections", None),
             external_actions=bool(self.external_managers),
+            show_nearby_artifact_names=self.params.env.show_nearby_artifact_names,
             hidden_external_keys=self.hidden_external_keys,
             stay_action=self.env.stay_action,
             genome=genome,
@@ -446,6 +447,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
             use_inventory=self.params.agent.use_inventory,
             artifact_creation=self.params.env.artifact_creation_cost >= 0,
             food_mechanism=self.params.env.food_mechanism,
+            show_nearby_artifact_names=self.params.env.show_nearby_artifact_names,
             energy_death=self.env.energy_death,
             energy_upkeep=self.env.energy_upkeep,
             finite_energy=bool(np.isfinite(self.env.agent_energy.get(tag, self.env.init_agent_energy))),
@@ -539,6 +541,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
             energy_upkeep=self.params.env.energy_upkeep,
             drop_food_on_death=self.params.env.drop_food_on_death,
             inert_artifacts=self.params.env.inert_artifacts,
+            show_nearby_artifact_names=self.params.env.show_nearby_artifact_names,
             external_actions_spec=self.external_actions_spec,
             excluded_actions=self.params.env.excluded_actions,
             headless=not self.params.run.live_render,

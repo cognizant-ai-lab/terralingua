@@ -24,7 +24,7 @@ import logging
 import math
 import pickle
 from abc import ABC, abstractmethod
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Set, Tuple
@@ -127,6 +127,7 @@ class BaseWorld(RolesMixin, ABC):
         energy_death: bool | None = None,
         verbose: int = 2,
         inert_artifacts: bool = False,
+        show_nearby_artifact_names: bool = True,
         external_actions_spec: dict | None = None,
         excluded_actions: List[str] | None = None,
         headless: bool = False,
@@ -158,6 +159,7 @@ class BaseWorld(RolesMixin, ABC):
         self.reproduction_cost = reproduction_cost
         self.artifact_creation_cost = artifact_creation_cost
         self.inert_artifacts = inert_artifacts
+        self.show_nearby_artifact_names = show_nearby_artifact_names
         self.two_parent_spawn = two_parent_spawn
         self.max_agents = max_agents
         self.food_mechanism = food_mechanism
@@ -1657,7 +1659,7 @@ class BaseWorld(RolesMixin, ABC):
         for art in self.agent_inventories[agent]:
             artifact = self.artifacts[art]
             key = (str(artifact.art_type), bool(artifact.movable))
-            groups.setdefault(key, []).append(str(artifact.display_name))
+            groups.setdefault(key, []).append(str(artifact.name))
         lines = []
         for (art_type, movable), names in sorted(groups.items()):
             head = f"A({art_type},{'movable' if movable else 'fixed'})"
@@ -1668,6 +1670,16 @@ class BaseWorld(RolesMixin, ABC):
                 lines.append(f"{head} x{len(names)}: {', '.join(names)}")
         return lines
 
+    def _artifact_items(self, art_names) -> List[str]:
+        """Observation items for the artifacts at one position: one per artifact
+        ('A(type,movable/fixed): name'), or one count per type when the world hides
+        nearby artifact names ('2 text'). Names stay in the menus and passive texts."""
+        arts = [self.artifacts[n] for n in art_names]
+        if self.show_nearby_artifact_names:
+            return [f"A({a.art_type},{'movable' if a.movable else 'fixed'}): {a.name}" for a in arts]
+        counts = Counter(str(a.art_type) for a in arts)
+        return [f"{n} {art_type}" for art_type, n in sorted(counts.items())]
+
     def _build_step_snapshot(self) -> Tuple[dict, dict]:
         """Pre-compute per-position food and artifact strings once per step."""
         food_snap: dict = {pos: str(val) for pos, val in self.food.items()}
@@ -1675,12 +1687,7 @@ class BaseWorld(RolesMixin, ABC):
         if not self.inert_artifacts:
             for pos, art_names in self.pos_artifacts.items():
                 if art_names:
-                    art_snap[pos] = [
-                        f"A({self.artifacts[n].art_type},"
-                        f"{'movable' if self.artifacts[n].movable else 'fixed'}): "
-                        f"{self.artifacts[n].display_name}"
-                        for n in art_names
-                    ]
+                    art_snap[pos] = self._artifact_items(art_names)
         return food_snap, art_snap
 
     def _on_env_action(

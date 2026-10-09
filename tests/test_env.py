@@ -314,6 +314,21 @@ class TestBuildObs:
         obs, _ = env._build_obs("a0")
         assert obs["inventory"] == ["A(text,movable): inv_art"]
 
+    def test_hiding_nearby_artifact_names_shows_one_count_per_type(self, env):
+        pos = env.agent_pos["a0"]
+        for name in ("sign1", "sign2"):
+            env.add_artifact(pose=pos, art_type="text", art_name=name, payload="hello", creator="a0", lifespan=10)
+        env.show_nearby_artifact_names = False
+        obs, _ = env._build_obs("a0")
+        items = obs["observation"][(0, 0)]
+        assert "2 text" in items and not any("sign" in s for s in items)
+        snapshot_items = env._build_step_snapshot()[1][pos]
+        assert snapshot_items == ["2 text"]
+        env.show_nearby_artifact_names = True
+        obs, _ = env._build_obs("a0")
+        assert sorted(s for s in obs["observation"][(0, 0)] if s.startswith("A(")) == [
+            "A(text,movable): sign1", "A(text,movable): sign2"]
+
     def test_inventory_groups_artifacts_of_a_kind(self, env):
         pos = env.agent_pos["a0"]
         for name in ("kit_b", "kit_a"):

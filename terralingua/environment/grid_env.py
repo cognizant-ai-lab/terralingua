@@ -65,6 +65,7 @@ class OpenGridWorld(BaseWorld):
         energy_upkeep: int | None = None,
         verbose: int = 2,
         inert_artifacts: bool = False,
+        show_nearby_artifact_names: bool = True,
         external_actions_spec: dict | None = None,
         excluded_actions: List[str] | None = None,
         headless: bool = False,
@@ -100,6 +101,7 @@ class OpenGridWorld(BaseWorld):
             energy_upkeep=energy_upkeep,
             verbose=verbose,
             inert_artifacts=inert_artifacts,
+            show_nearby_artifact_names=show_nearby_artifact_names,
             external_actions_spec=external_actions_spec,
             excluded_actions=excluded_actions,
             headless=headless,
@@ -417,11 +419,7 @@ class OpenGridWorld(BaseWorld):
                         if art_strs:
                             observation[rel_pos].extend(art_strs)
                     elif not self.inert_artifacts:
-                        for art_name in self.pos_artifacts[(gx, gy)]:
-                            art = self.artifacts[art_name]
-                            observation[rel_pos].append(
-                                f"A({art.art_type},{'movable' if art.movable else 'fixed'}): {art.display_name}"
-                            )
+                        observation[rel_pos].extend(self._artifact_items(self.pos_artifacts[(gx, gy)]))
                 # CELLS OUTSIDE OF MAP
                 else:
                     observation[rel_pos].append("X")

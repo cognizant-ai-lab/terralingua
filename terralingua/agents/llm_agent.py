@@ -41,6 +41,7 @@ class LLMAgent(AgentMixin):
         use_inventory: bool = True,
         artifact_creation: bool = True,
         food_mechanism: bool = True,
+        show_nearby_artifact_names: bool = True,
         energy_death: bool | None = None,
         energy_upkeep: int | None = None,
         external_actions: bool = False,
@@ -65,6 +66,7 @@ class LLMAgent(AgentMixin):
         self.use_inventory = use_inventory
         self.artifact_creation = artifact_creation
         self.food_mechanism = food_mechanism
+        self.show_nearby_artifact_names = show_nearby_artifact_names
         self._energy_upkeep_setting = None if energy_upkeep is None else int(energy_upkeep)
         self.energy_death = (food_mechanism or self.energy_upkeep > 0) if energy_death is None else energy_death
         self.finite_energy = finite_energy
@@ -133,6 +135,7 @@ class LLMAgent(AgentMixin):
             use_inventory=self.use_inventory,
             artifact_creation=self.artifact_creation,
             food_mechanism=self.food_mechanism,
+            show_nearby_artifact_names=self.show_nearby_artifact_names,
             energy_death=self.energy_death,
             energy_upkeep=self.energy_upkeep,
             finite_energy=self.finite_energy,
@@ -394,6 +397,7 @@ class LLMAgent(AgentMixin):
             "use_inventory": self.use_inventory,
             "artifact_creation": self.artifact_creation,
             "food_mechanism": self.food_mechanism,
+            "show_nearby_artifact_names": self.show_nearby_artifact_names,
             "energy_death": self.energy_death,
             "energy_upkeep": self.energy_upkeep,
             "finite_energy": self.finite_energy,
@@ -428,6 +432,7 @@ class LLMAgent(AgentMixin):
         self.use_inventory = state_ckpt["use_inventory"]
         self.artifact_creation = state_ckpt["artifact_creation"]
         self.food_mechanism = state_ckpt["food_mechanism"]
+        self.show_nearby_artifact_names = state_ckpt.get("show_nearby_artifact_names", True)
         self.energy_death = state_ckpt.get("energy_death", self.food_mechanism)
         self._energy_upkeep_setting = state_ckpt.get("energy_upkeep")
         self.external_actions = state_ckpt.get("external_actions", False)

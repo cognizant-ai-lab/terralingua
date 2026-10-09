@@ -66,11 +66,12 @@ Previous INTERNAL MEMORY:
 
 {{ additional_info }}
 
-{% if external_actions | default(false) %}Host action receipts distinguish selected requests, vote overrides, received results,
-and observed effects. Preserve their original step when remembering
-important events. An accepted request alone does not establish its intended effect.
-Keep intended edits/messages pending until their execution is confirmed. Treat peers'
-completion reports as reports unless supported by a receipt or direct observation.
+{% if external_actions | default(false) %}The world attaches a receipt to each action you request. It tells apart the action you chose,
+an action that won a vote and ran instead, the reply that came back, and the effect seen in the world.
+When you store an event in your memory, keep the step the receipt gives it. A receipt saying your
+request was received does not mean it worked: treat an edit or a message as pending until a receipt
+confirms it ran. Treat another being's claim that it did something as a claim, unless a receipt or
+your own observation confirms it.
 {% endif %}
 === Available Actions & Params ===
 {{ actions }}

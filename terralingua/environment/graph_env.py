@@ -63,6 +63,7 @@ class OpenGraphWorld(BaseWorld):
         energy_upkeep: int | None = None,
         verbose: int = 2,
         inert_artifacts: bool = False,
+        show_nearby_artifact_names: bool = True,
         external_actions_spec: dict | None = None,
         excluded_actions: List[str] | None = None,
         headless: bool = False,
@@ -98,6 +99,7 @@ class OpenGraphWorld(BaseWorld):
             energy_upkeep=energy_upkeep,
             verbose=verbose,
             inert_artifacts=inert_artifacts,
+            show_nearby_artifact_names=show_nearby_artifact_names,
             external_actions_spec=external_actions_spec,
             excluded_actions=excluded_actions,
             headless=headless,
@@ -416,12 +418,7 @@ class OpenGraphWorld(BaseWorld):
                 if art_strs:
                     items.extend(art_strs)
             elif not self.inert_artifacts:
-                for art_name in self.pos_artifacts[node_id]:
-                    art = self.artifacts[art_name]
-                    items.append(
-                        f"A({art.art_type},"
-                        f"{'movable' if art.movable else 'fixed'}): {art.display_name}"
-                    )
+                items.extend(self._artifact_items(self.pos_artifacts[node_id]))
 
             # exits = {
             #     data["label"]: nbr for nbr, data in self.world_graph.edges_from(node_id)

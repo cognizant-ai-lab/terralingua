@@ -442,6 +442,12 @@ class EnvConfig(ConfigModel):
     inert_artifacts: bool = Field(
         default=False, description="Artifacts cannot be interacted with"
     )
+    show_nearby_artifact_names: bool = Field(
+        default=True,
+        description="Observation items name every artifact in view ('A(type,fixed): name'); "
+        "false shows one count per artifact type per node or cell ('2 text'). Names and "
+        "states stay in the action menus and under 'Artifacts here'",
+    )
     init_agents: int = Field(ge=0, default=20, description="Initial agent count")
     init_human_agents: int = Field(ge=0, default=0, description="Initial human agent count")
     init_agent_energy: int = Field(default=50, description="Initial energy per agent")
