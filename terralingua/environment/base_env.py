@@ -456,7 +456,9 @@ class BaseWorld(RolesMixin, ABC):
         if poses is not None:
             agent_poses.update(poses)
 
-        for tag in self.agent_registry:
+        # Sorted: the registry is a set, and each placement draws from the seeded rng,
+        # so the iteration order must not depend on Python's hash randomisation.
+        for tag in sorted(self.agent_registry):
             self._place_agent(tag, pos=agent_poses[tag])
 
         if self.food_mechanism:
