@@ -66,12 +66,10 @@ Previous INTERNAL MEMORY:
 
 {{ additional_info }}
 
-{% if external_actions | default(false) %}The world attaches a receipt to each action you request. It tells apart the action you chose,
-an action that won a vote and ran instead, the reply that came back, and the effect seen in the world.
-When you store an event in your memory, keep the step the receipt gives it. A receipt saying your
-request was received does not mean it worked: treat an edit or a message as pending until a receipt
-confirms it ran. Treat another being's claim that it did something as a claim, unless a receipt or
-your own observation confirms it.
+{% if external_actions | default(false) %}Action receipts tell apart your request, a vote you lost, the reply, and any effect seen. Remember
+important events with their original step. An accepted request alone does not mean it had the effect
+you wanted. Treat requested edits or messages as pending until it is confirmed they went through. What
+another being says it did is only a claim until a receipt or your own observation backs it.
 {% endif %}
 === Available Actions & Params ===
 {{ actions }}

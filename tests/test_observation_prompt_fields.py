@@ -175,3 +175,16 @@ def test_history_additional_info_renders_like_the_current_state():
     assert "Previous action outcome: You moved.\nClock: Monday, 10:00, morning." in current
     assert "{'Action outcome'" not in prompt  # no raw dict anywhere
     assert agent.history[0][4] == {"Action outcome": "You waved.", "Clock": "Monday, 09:00, morning."}  # stored key unchanged
+
+
+def test_receipts_are_hidden_unless_the_being_has_external_actions():
+    agent = _PromptAgent("graph.j2")
+    receipts = {"action_receipts": [{"selection_id": "x", "response_status": "received"}]}
+    agent.history = [_entry(info={"execution_request": {"selection_id": "x"}, "Clock": "Monday, 09:00, morning."})]
+    prompt = _render(agent, info={**receipts, "Clock": "Monday, 10:00, morning."})
+    assert "Clock: Monday, 09:00" in prompt and "Clock: Monday, 10:00" in prompt
+    assert "execution_request" not in prompt and "action_receipts" not in prompt
+    assert "=== Additional info from the environment ===" not in _render(agent, info=receipts)  # nothing left to show
+    agent.external_actions = True
+    prompt = _render(agent, info={**receipts, "Clock": "Monday, 10:00, morning."})
+    assert "execution_request" in prompt and "action_receipts" in prompt

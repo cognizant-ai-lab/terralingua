@@ -127,6 +127,7 @@ class LLMAgent(AgentMixin):
             self.scenario_specific_instructions,
             finite_energy=self.finite_energy,
             finite_lifespan=self.finite_lifespan,
+            show_nearby_artifact_names=self.show_nearby_artifact_names,
         )
         self.system_prompt = render_system_prompt(
             self.system_prompt_template,

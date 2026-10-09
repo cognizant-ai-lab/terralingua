@@ -29,6 +29,15 @@ def _strip_response_keys(raw: str, hidden_keys: list) -> str:
     return json.dumps(payload, indent=2)
 
 
+# Receipts are the runner's bookkeeping for external tool calls. A being without
+# external actions never reads them; they stay in the logs and the history records.
+RECEIPT_KEYS = frozenset({"action_receipts", "execution_request", "execution_receipt"})
+
+
+def _visible_info(info: dict, external_actions: bool) -> dict:
+    return info if external_actions else {k: v for k, v in info.items() if k not in RECEIPT_KEYS}
+
+
 # Keys stored by the world, shown to the being under a clearer label. The being reads
 # the info of step N while choosing the action of step N+1, so an outcome is always
 # the outcome of its previous action.
@@ -139,6 +148,7 @@ class AgentMixin:
     ) -> str:
         solo = getattr(self, "solo", False)
         social_graph = getattr(self, "system_prompt_template", "") == "social_graph.j2"
+        external = bool(getattr(self, "external_actions", False))
         inventory_label = "Inventory (private artifacts)" if social_graph else "Inventory"
         history_txt = ""
         if self.history and self.max_history > 0:
@@ -160,7 +170,9 @@ class AgentMixin:
                 )
                 # Published context appears once, in the current decision input.
                 if isinstance(past_info, dict):
-                    past_info = {k: v for k, v in past_info.items() if k != "external_context"}
+                    past_info = _visible_info(
+                        {k: v for k, v in past_info.items() if k != "external_context"}, external
+                    )
                 if past_info is not None and len(past_info):
                     displayed_info = (
                         _format_info_fields(past_info, social_graph=social_graph)
@@ -178,6 +190,8 @@ class AgentMixin:
                 history_txt += "\n"
 
         additional_info = ""
+        if isinstance(info, dict):
+            info = _visible_info(info, external)
         if info is not None and len(info):
             info_list = _format_info_fields(info, social_graph=social_graph)
             additional_info = f"\n=== Additional info from the environment ===\n{info_list}\n"
