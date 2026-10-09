@@ -96,6 +96,8 @@ Graph settings also accept `graph.topology` for `env.graph.topology`.
 
 In a graph world a move may cost energy per edge. Set `graph.move_cost_attr` to the name of an edge attribute in the graph file (for example `energy_cost`); a move along an edge then costs that many energy units, and an edge without the attribute costs `graph.default_move_cost` (1). Staying costs nothing extra, the per-step upkeep is unchanged, the move menu lists the cost of every exit, a being without enough energy keeps its place and reads why, and every charge is a `MOVE_COST` event in the world log. Leave `move_cost_attr` unset for the previous behaviour.
 
+The energy every being loses per step is `energy_upkeep` (null: 1 with `food_mechanism`, 0 without). Set `food_mechanism: false` with `energy_upkeep: 1` for a world where energy drains every step but no food appears, for example when a scenario supplies energy through its own artifacts; `energy_death` then defaults to true and the system prompt describes the drain without mentioning food.
+
 Supply each setting once within an override layer.
 Aliases and parent/child paths cannot overlap within that layer.
 Repeated CLI flags and duplicate JSON or YAML keys are rejected.

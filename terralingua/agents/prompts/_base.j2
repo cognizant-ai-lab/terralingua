@@ -18,15 +18,12 @@ You will receive also:
     - a list of traits determining the way you act{% endblock %}
 
 Note that:
-{% if finite_energy | default(true) %}{% if food_mechanism %}
+{% if finite_energy | default(true) %}{% if food_mechanism or (energy_upkeep | default(0)) > 0 or energy_death %}
 - Energy
-    - {% block energy_decay_rule %}You lose 1 energy at each turn, whatever you do, even if you stay still.{% endblock %}
-    {% if energy_death | default(food_mechanism) %}- When your energy reaches 0, you die.
-    {% endif %}    - You can refill your energy by {% block energy_refill_rule %}being on a cell or node containing food. Food gives energy equal to the food's value and then disappears{% endblock %}.
-{% elif energy_death %}
-- Energy
-    - When your energy reaches 0, you die.
-{% endif %}{% endif %}
+    {% if (energy_upkeep | default(1 if food_mechanism else 0)) > 0 %}- {% block energy_decay_rule %}You lose {{ energy_upkeep | default(1) }} energy at each turn, whatever you do, even if you stay still.{% endblock %}
+    {% endif %}{% if energy_death | default(food_mechanism) %}- When your energy reaches 0, you die.
+    {% endif %}{% if food_mechanism %}- You can refill your energy by {% block energy_refill_rule %}being on a cell or node containing food. Food gives energy equal to the food's value and then disappears{% endblock %}.
+    {% endif %}{% endif %}{% endif %}
 {% if finite_lifespan | default(true) %}- Time
     - You have a set life span. Once your time reaches 0, you die.
     - You lose 1 time unit at each turn. You cannot refill your time.

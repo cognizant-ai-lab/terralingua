@@ -284,13 +284,15 @@ def inspect_config(config: ExperimentConfig, requested: dict | None = None) -> d
             })
     cost = config.env.reproduction_cost
     energy_death = config.env.energy_death
+    upkeep = (1 if config.env.food_mechanism else 0) if config.env.energy_upkeep is None else config.env.energy_upkeep
     newborn = None if cost < 0 else (config.env.init_agent_energy if cost == 0 else cost)
     if newborn is not None and newborn < 0:
         newborn = "unlimited"
     derived = {
         "artifact_creation_enabled": config.env.artifact_creation_cost >= 0,
         "internal_memory_enabled": config.agent.internal_memory_size > 0,
-        "energy_death": config.env.food_mechanism if energy_death is None else energy_death,
+        "energy_death": (config.env.food_mechanism or upkeep > 0) if energy_death is None else energy_death,
+        "energy_upkeep": upkeep,
         "reproduction_enabled": cost >= 0,
         "newborn_base_energy": newborn,
         "failed_birth_cost": max(cost, 0),

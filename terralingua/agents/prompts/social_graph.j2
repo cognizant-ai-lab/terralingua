@@ -10,7 +10,7 @@ Your network summary lists following relationships, pending requests, and sugges
 {% if artifact_creation %}Artifact entries show their type, whether they are movable or fixed, and their name.
 {% if not solo %}Seeing another agent's artifact name does not grant access; use your available actions.{% endif %}{% endif %}{% endblock %}
 
-{% block energy_decay_rule %}You lose 1 energy each turn, whatever you do.{% endblock %}
+{% block energy_decay_rule %}You lose {{ energy_upkeep | default(1) }} energy each turn, whatever you do.{% endblock %}
 {% block energy_refill_rule %}receiving food. Food restores energy equal to its value and then disappears{% endblock %}
 
 {% block communication_section %}- Communication

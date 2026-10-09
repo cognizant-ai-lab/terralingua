@@ -413,10 +413,15 @@ class EnvConfig(ConfigModel):
         default=True, description="Drop food at agent position on death"
     )
     food_decay_rate: float = Field(ge=0, le=1, default=0.05, description="Food decay rate")
-    food_mechanism: bool = Field(default=True, description="Enable natural food generation, decay, and one energy of upkeep per step. Ignored in social graphs.")
+    food_mechanism: bool = Field(default=True, description="Enable natural food generation and decay and, unless energy_upkeep is set, one energy of upkeep per step. Ignored in social graphs.")
+    energy_upkeep: int | None = Field(
+        default=None,
+        ge=0,
+        description="Energy every agent loses per step, whatever it does. Null: 1 when food_mechanism is on, else 0. Works without food.",
+    )
     energy_death: bool | None = Field(
         default=None,
-        description="Agents die when energy reaches 0. Default: only when food_mechanism is on",
+        description="Agents die when energy reaches 0. Default: only when food_mechanism is on or energy_upkeep is positive",
     )
     food_spawn_rate: int = Field(ge=0, default=10, description="Food spawn per step")
     food_zones: int | list[tuple[int, int]] | list[str] | None = Field(

@@ -32,8 +32,9 @@ config:
     max_artifact_tokens: 500  # int. Maximum token length of a text artifact's payload
     drop_food_on_death: true  # bool. Drop food at agent position on death
     food_decay_rate: 0.05  # float. Food decay rate
-    food_mechanism: true  # bool. Enable natural food generation, decay, and one energy of upkeep per step. Ignored in social graphs.
-    energy_death: null  # bool | None. Agents die when energy reaches 0. Default: only when food_mechanism is on
+    food_mechanism: true  # bool. Enable natural food generation and decay and, unless energy_upkeep is set, one energy of upkeep per step. Ignored in social graphs.
+    energy_upkeep: null  # int | None. Energy every agent loses per step, whatever it does. Null: 1 when food_mechanism is on, else 0. Works without food.
+    energy_death: null  # bool | None. Agents die when energy reaches 0. Default: only when food_mechanism is on or energy_upkeep is positive
     food_spawn_rate: 10  # int. Food spawn per step
     food_zones: 2  # int | list[tuple[int, int]] | list[str] | None. Food zones: a positive count, grid x,y coordinates, graph node names, or null for uniform placement
     dynamic_grid_scaling: true  # bool. Expand grid when agent density exceeds the max

@@ -42,6 +42,7 @@ class LLMAgent(AgentMixin):
         artifact_creation: bool = True,
         food_mechanism: bool = True,
         energy_death: bool | None = None,
+        energy_upkeep: int | None = None,
         external_actions: bool = False,
         hidden_external_keys: list[str] | None = None,
         scenario_specific_instructions: str = "base",
@@ -64,7 +65,8 @@ class LLMAgent(AgentMixin):
         self.use_inventory = use_inventory
         self.artifact_creation = artifact_creation
         self.food_mechanism = food_mechanism
-        self.energy_death = food_mechanism if energy_death is None else energy_death
+        self._energy_upkeep_setting = None if energy_upkeep is None else int(energy_upkeep)
+        self.energy_death = (food_mechanism or self.energy_upkeep > 0) if energy_death is None else energy_death
         self.finite_energy = finite_energy
         self.finite_lifespan = finite_lifespan
         # World's canonical pass-the-turn action, supplied by the env (social_graph
@@ -109,6 +111,14 @@ class LLMAgent(AgentMixin):
         self.debug = debug
         self.update_system_prompt()
 
+    @property
+    def energy_upkeep(self) -> int:
+        """Energy lost per step: the world's setting, else 1 with food_mechanism and 0 without."""
+        setting = getattr(self, "_energy_upkeep_setting", None)
+        if setting is None:
+            return 1 if self.food_mechanism else 0
+        return setting
+
     def update_system_prompt(self):
         """Render the system instructions for this agent's current resources."""
         scenario_instructions = resolve_instructions(
@@ -124,6 +134,7 @@ class LLMAgent(AgentMixin):
             artifact_creation=self.artifact_creation,
             food_mechanism=self.food_mechanism,
             energy_death=self.energy_death,
+            energy_upkeep=self.energy_upkeep,
             finite_energy=self.finite_energy,
             finite_lifespan=self.finite_lifespan,
             external_actions=self.external_actions,
@@ -384,6 +395,7 @@ class LLMAgent(AgentMixin):
             "artifact_creation": self.artifact_creation,
             "food_mechanism": self.food_mechanism,
             "energy_death": self.energy_death,
+            "energy_upkeep": self.energy_upkeep,
             "finite_energy": self.finite_energy,
             "finite_lifespan": self.finite_lifespan,
             "external_actions": self.external_actions,
@@ -417,6 +429,7 @@ class LLMAgent(AgentMixin):
         self.artifact_creation = state_ckpt["artifact_creation"]
         self.food_mechanism = state_ckpt["food_mechanism"]
         self.energy_death = state_ckpt.get("energy_death", self.food_mechanism)
+        self._energy_upkeep_setting = state_ckpt.get("energy_upkeep")
         self.external_actions = state_ckpt.get("external_actions", False)
         self.hidden_external_keys = state_ckpt.get("hidden_external_keys", [])
         self.scenario_specific_instructions = state_ckpt["scenario_specific_instructions"]

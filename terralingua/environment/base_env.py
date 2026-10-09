@@ -90,6 +90,14 @@ class BaseWorld(RolesMixin, ABC):
         """
         return {"action": "move", "message": "", "params": {"direction": "stay"}}
 
+    @property
+    def energy_upkeep(self) -> int:
+        """Energy every agent loses per step: the configured value, else 1 with food_mechanism and 0 without."""
+        setting = getattr(self, "_energy_upkeep_setting", None)
+        if setting is None:
+            return 1 if self.food_mechanism else 0
+        return setting
+
     def __init__(
         self,
         init_agent_energy: int = 100,
@@ -115,6 +123,7 @@ class BaseWorld(RolesMixin, ABC):
         food_sigma: float | None = None,
         static_food: bool = False,
         food_mechanism: bool = True,
+        energy_upkeep: int | None = None,
         energy_death: bool | None = None,
         verbose: int = 2,
         inert_artifacts: bool = False,
@@ -153,7 +162,12 @@ class BaseWorld(RolesMixin, ABC):
         self.max_agents = max_agents
         self.food_mechanism = food_mechanism
         # Death at energy 0 follows the food mechanism unless set explicitly.
-        self.energy_death = food_mechanism if energy_death is None else energy_death
+        if energy_upkeep is not None and (
+            isinstance(energy_upkeep, bool) or not isinstance(energy_upkeep, int) or energy_upkeep < 0
+        ):
+            raise ValueError("energy_upkeep must be an integer at least 0.")
+        self._energy_upkeep_setting = energy_upkeep
+        self.energy_death = (food_mechanism or self.energy_upkeep > 0) if energy_death is None else energy_death
         if not self.food_mechanism:
             self.drop_food_on_death = False
 
@@ -1313,8 +1327,8 @@ class BaseWorld(RolesMixin, ABC):
         # Energy only drains over time when the food mechanism is on. Without
         # food, energy is a pure action-cost currency (no passive starvation).
         for a in self.agent_registry:
-            if self.food_mechanism:
-                self.agent_energy[a] -= 1
+            if self.energy_upkeep:
+                self.agent_energy[a] -= self.energy_upkeep
             self.agent_time[a] -= 1
 
         # ---- handle deaths ----

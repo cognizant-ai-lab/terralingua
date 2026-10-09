@@ -59,6 +59,7 @@ def test_runner_uses_actual_world_settings(
     runner.env = SimpleNamespace(
         system_prompt_template="social_graph.j2",
         energy_death=False,
+        energy_upkeep=0,
         agent_energy={},
         init_agent_energy=100,
         reproduction_cost=20 if spawn_allowed else -1,

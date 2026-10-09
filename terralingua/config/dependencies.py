@@ -58,7 +58,7 @@ GROUPS = {
         "env.max_message_length", "env.graph.direct_message_cost",
     ],
     "Population and energy": [
-        "env.agent_lifespan", "env.energy_death", "env.init_agents",
+        "env.agent_lifespan", "env.energy_death", "env.energy_upkeep", "env.init_agents",
         "env.init_human_agents", "env.init_agent_energy", "env.min_agents",
         "env.max_agents", "env.reproduction_cost", "env.two_parent_spawn",
         "env.genome_mutation_rate",
@@ -208,11 +208,14 @@ APPLICABILITY = {
 
 NOTES = {
     "env.food_mechanism": (
-        "Food enables natural generation, decay, and one-energy upkeep per step. "
+        "Food enables natural generation and decay and, unless energy_upkeep is set, one-energy upkeep per step. "
         "Energy balances and reproduction remain available without food."
     ),
+    "env.energy_upkeep": (
+        "Null resolves to 1 with food_mechanism and 0 without. A positive value keeps the per-step energy drain when food is off."
+    ),
     "env.energy_death": (
-        "Null follows food_mechanism. An explicit boolean works independently of food."
+        "Null follows food_mechanism and energy_upkeep: on when either applies. An explicit boolean works independently."
     ),
     "env.init_agent_energy": (
         "Used for founders, arrivals, replenishment, and free births. "
@@ -243,7 +246,8 @@ NOTES = {
 DERIVED_DEPENDENCIES = {
     "artifact_creation_enabled": ["env.artifact_creation_cost"],
     "internal_memory_enabled": ["agent.internal_memory_size"],
-    "energy_death": ["env.food_mechanism", "env.energy_death"],
+    "energy_death": ["env.food_mechanism", "env.energy_upkeep", "env.energy_death"],
+    "energy_upkeep": ["env.food_mechanism", "env.energy_upkeep"],
     "reproduction_enabled": ["env.reproduction_cost"],
     "newborn_base_energy": ["env.reproduction_cost", "env.init_agent_energy"],
     "failed_birth_cost": ["env.reproduction_cost"],
