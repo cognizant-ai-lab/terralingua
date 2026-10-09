@@ -1678,7 +1678,7 @@ class BaseWorld(RolesMixin, ABC):
                     art_snap[pos] = [
                         f"A({self.artifacts[n].art_type},"
                         f"{'movable' if self.artifacts[n].movable else 'fixed'}): "
-                        f"{self.artifacts[n].name}"
+                        f"{self.artifacts[n].display_name}"
                         for n in art_names
                     ]
         return food_snap, art_snap
