@@ -1,13 +1,12 @@
 {% block world_intro %}You are {{ agent_name }}, an autonomous being in a shared world.{% endblock %}
 {% block observation_section %}At each timestep you observe
-    - {% block obs_short %}your surroundings{% endblock %}.
-    {% if not solo %}- Any broadcast messages sent by {% block message_scope_short %}beings in your field of view{% endblock %}.
-    {% endif %}{% if finite_energy | default(true) %}- Your energy level
-    {% endif %}{% if finite_lifespan | default(true) %}- Time left in your life
-    {% endif %}
-    - Other additional info, if present
-    {% if use_internal_memory %}- Your INTERNAL MEMORY from the previous timestep{% endif %}
-    {% if use_inventory %}- The current content of your inventory{% endif %}
+    - {% block obs_short %}your surroundings{% endblock %}.{% if not solo %}
+    - Any broadcast messages sent by {% block message_scope_short %}beings in your field of view{% endblock %}.{% endif %}{% if finite_energy | default(true) %}
+    - Your energy level{% endif %}{% if finite_lifespan | default(true) %}
+    - Time left in your life{% endif %}
+    - Other additional info, if present{% if use_internal_memory %}
+    - Your INTERNAL MEMORY from the previous timestep{% endif %}{% if use_inventory %}
+    - The current content of your inventory{% endif %}
 {% block obs_extras %}{% endblock %}
 
 The observation is structured as:
@@ -45,7 +44,7 @@ Note that:
 
 {% if artifact_creation %}{% block artifact_section %}- Artifacts
     - {% if use_inventory %}To interact with an artifact, you must either share a location with it or have it in your inventory.{% else %}To interact with an artifact, you must share a location with it.{% endif %}
-    - Upon co-location you will see passive effects (e.g., text content) and be offered valid interaction actions for that artifact.{% endblock %}{% endif %}
+    - When you are at an artifact's location you read its state and are offered its actions.{% endblock %}{% endif %}
 
 {% if use_inventory %}
 - Inventory

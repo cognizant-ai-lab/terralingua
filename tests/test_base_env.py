@@ -537,7 +537,7 @@ class TestPassiveArtifacts:
         _, _, _, _, infos = env.step(
             {"a0": {"action": "move", "params": {"direction": "stay"}}}
         )
-        assert "Passive interaction result - Artifacts at position" in infos["a0"]
+        assert "Artifacts here" in infos["a0"]
 
     def test_passive_effect_inventory(self, env):
         pos = env.agent_pos["a0"]
@@ -555,7 +555,7 @@ class TestPassiveArtifacts:
         _, _, _, _, infos = env.step(
             {"a0": {"action": "move", "params": {"direction": "stay"}}}
         )
-        assert "Passive interaction result - Artifacts in inventory" in infos["a0"]
+        assert "Artifacts in your inventory" in infos["a0"]
 
     def test_repeated_passive_effects_collapse_to_a_count(self, env, monkeypatch):
         pos = env.agent_pos["a0"]
@@ -574,7 +574,7 @@ class TestPassiveArtifacts:
         *_, infos = env.step(
             {"a0": {"action": "move", "params": {"direction": "stay"}}}
         )
-        key = "Passive interaction result - Artifacts in inventory"
+        key = "Artifacts in your inventory"
         assert infos["a0"][key] == ["Protective gear. (x3)"]
 
 

@@ -1233,7 +1233,7 @@ class BaseWorld(RolesMixin, ABC):
                     )
                 if passive_effects:
                     infos[agent][
-                        "Passive interaction result - Artifacts at position"
+                        "Artifacts here"
                     ] = _collapse_repeats(passive_effects)
 
                 passive_effects = []
@@ -1244,7 +1244,7 @@ class BaseWorld(RolesMixin, ABC):
                     passive_effects.append(effect)
                 if passive_effects:
                     infos[agent][
-                        "Passive interaction result - Artifacts in inventory"
+                        "Artifacts in your inventory"
                     ] = _collapse_repeats(passive_effects)
         # ================================
 

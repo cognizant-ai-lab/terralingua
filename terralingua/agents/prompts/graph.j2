@@ -3,6 +3,8 @@
 {% block world_intro %}You are {{ agent_name }}, an autonomous being in a world of connected locations, shared with other beings.{% endblock %}
 
 {% block obs_short %}A list of nearby locations within your hop radius and their contents{% endblock %}
+{% block message_scope_short %}beings within your hop radius{% endblock %}
+{% block message_scope_detail %}the beings within your hop radius{% endblock %}
 
 {% block obs_detail %}- First line: 'You are at: <node_id>' — your current location
 - Then one line per nearby location: [<node_id>, dist=<hops>]: item | item | ...

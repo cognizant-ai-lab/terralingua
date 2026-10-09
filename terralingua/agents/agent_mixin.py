@@ -32,8 +32,8 @@ def _strip_response_keys(raw: str, hidden_keys: list) -> str:
 def _format_info_fields(info: dict, social_graph: bool) -> str:
     """Render fields without changing their stored keys or values."""
     labels = {
-        "Passive interaction result - Artifacts at position": "Your public artifact contents",
-        "Passive interaction result - Artifacts in inventory": "Your private artifact contents",
+        "Artifacts here": "Your public artifact contents",
+        "Artifacts in your inventory": "Your private artifact contents",
     }
     lines = []
     for key, value in info.items():

@@ -7,8 +7,8 @@ import pytest
 
 from terralingua.agents.agent_mixin import AgentMixin
 
-PUBLIC_KEY = "Passive interaction result - Artifacts at position"
-PRIVATE_KEY = "Passive interaction result - Artifacts in inventory"
+PUBLIC_KEY = "Artifacts here"
+PRIVATE_KEY = "Artifacts in your inventory"
 
 
 class _PromptAgent(AgentMixin):
