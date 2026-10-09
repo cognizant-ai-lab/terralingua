@@ -58,6 +58,16 @@ log = logging.getLogger(__name__)
 _msg_encoder = tiktoken.get_encoding("cl100k_base")
 
 
+def _collapse_repeats(items: List[str]) -> List[str]:
+    """Identical entries, e.g. twenty pieces of one equipment, become one line."""
+    if not all(isinstance(item, str) for item in items):
+        return items
+    counts: Dict[str, int] = {}
+    for item in items:
+        counts[item] = counts.get(item, 0) + 1
+    return [item if n == 1 else f"{item} (x{n})" for item, n in counts.items()]
+
+
 class BaseWorld(RolesMixin, ABC):
     """Abstract base for grid-based and graph-based world environments.
 
@@ -509,6 +519,12 @@ class BaseWorld(RolesMixin, ABC):
                 tokens = _msg_encoder.encode(message)
                 if len(tokens) > self.max_message_length:
                     message = _msg_encoder.decode(tokens[: self.max_message_length])
+                    tail = " ".join(message.split()[-6:])
+                    infos[agent]["Message outcome"] = (
+                        f"Your message was longer than {self.max_message_length} "
+                        f'tokens and was cut off after "...{tail}". Only that part '
+                        "reached the others."
+                    )
             action_params = act.get("params", {})
 
             # Record message regardless of action validity
@@ -1202,7 +1218,7 @@ class BaseWorld(RolesMixin, ABC):
                 if passive_effects:
                     infos[agent][
                         "Passive interaction result - Artifacts at position"
-                    ] = passive_effects
+                    ] = _collapse_repeats(passive_effects)
 
                 passive_effects = []
                 for art_name in self.agent_inventories[agent]:
@@ -1213,7 +1229,7 @@ class BaseWorld(RolesMixin, ABC):
                 if passive_effects:
                     infos[agent][
                         "Passive interaction result - Artifacts in inventory"
-                    ] = passive_effects
+                    ] = _collapse_repeats(passive_effects)
         # ================================
 
         # World events
@@ -1618,6 +1634,23 @@ class BaseWorld(RolesMixin, ABC):
                 energy=energy,
                 reason=reason,
             )
+
+    def _inventory_lines(self, agent: str) -> List[str]:
+        """One line per kind of artifact; several of a kind share it, counted."""
+        groups: Dict[Tuple[str, bool], List[str]] = {}
+        for art in self.agent_inventories[agent]:
+            artifact = self.artifacts[art]
+            key = (str(artifact.art_type), bool(artifact.movable))
+            groups.setdefault(key, []).append(str(artifact.name))
+        lines = []
+        for (art_type, movable), names in sorted(groups.items()):
+            head = f"A({art_type},{'movable' if movable else 'fixed'})"
+            names = sorted(names)
+            if len(names) == 1:
+                lines.append(f"{head}: {names[0]}")
+            else:
+                lines.append(f"{head} x{len(names)}: {', '.join(names)}")
+        return lines
 
     def _build_step_snapshot(self) -> Tuple[dict, dict]:
         """Pre-compute per-position food and artifact strings once per step."""

@@ -431,12 +431,7 @@ class OpenGraphWorld(BaseWorld):
                 "exits": self.world_graph.neighbors(node_id),
             }
 
-        inventory_list = [
-            f"A({self.artifacts[art].art_type},"
-            f"{'movable' if self.artifacts[art].movable else 'fixed'}): "
-            f"{self.artifacts[art].name}"
-            for art in self.agent_inventories[agent]
-        ]
+        inventory_list = self._inventory_lines(agent)
 
         complete_obs = {
             "observation": observation,

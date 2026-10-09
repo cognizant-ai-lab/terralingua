@@ -23,6 +23,8 @@ MOVE_DICT = {
     "left": (0, -1),
     "right": (0, 1),
 }
+# The prompt explains the axes with compass points; beings sometimes answer with them.
+MOVE_ALIASES = {"north": "up", "south": "down", "east": "right", "west": "left"}
 
 
 class OpenGridWorld(BaseWorld):
@@ -172,12 +174,17 @@ class OpenGridWorld(BaseWorld):
                 agent_tag=agent, agent_name=self.agent_names[agent],
                 action="move", reason="missing_direction",
             )
-        direction = move_params.get("direction", "stay")
+        raw = move_params.get("direction", "stay")
+        direction = raw.strip().lower() if isinstance(raw, str) else raw
+        direction = MOVE_ALIASES.get(direction, direction)
         if direction not in MOVE_DICT:
             self.logger.log(
                 time=self.step_count, event_type=Event.ACTION_REFUSED,
                 agent_tag=agent, agent_name=self.agent_names[agent],
-                action="move", reason="invalid_direction", direction=direction,
+                action="move", reason="invalid_direction", direction=raw,
+            )
+            infos[agent]["Move outcome"] = (
+                f"Unknown direction '{raw}'. Use one of: up, down, left, right, stay."
             )
         move = MOVE_DICT.get(direction, (0, 0))
         new_pose = self.wrap_xy(
@@ -417,10 +424,7 @@ class OpenGridWorld(BaseWorld):
                 else:
                     observation[rel_pos].append("X")
 
-        inventory_list = [
-            f"A({self.artifacts[art].art_type},{'movable' if self.artifacts[art].movable else 'fixed'}): {self.artifacts[art].name}"
-            for art in self.agent_inventories[agent]
-        ]
+        inventory_list = self._inventory_lines(agent)
 
         complete_obs = {
             "observation": observation,

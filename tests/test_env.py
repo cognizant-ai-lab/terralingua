@@ -107,10 +107,25 @@ class TestApplyMove:
         new_pos, infos = env._apply_move("a0", None, {"a0": {}})
         assert new_pos == pos
 
-    def test_unknown_direction_stays(self, env):
+    def test_unknown_direction_stays_and_is_reported(self, env):
         pos = env.agent_pos["a0"]
         new_pos, infos = env._apply_move("a0", {"direction": "diagonal"}, {"a0": {}})
         assert new_pos == pos
+        assert "diagonal" in infos["a0"]["Move outcome"]
+        assert "up, down, left, right, stay" in infos["a0"]["Move outcome"]
+
+    @pytest.mark.parametrize("direction,expected", [
+        ("north", (4, 5)),
+        ("south", (6, 5)),
+        ("east", (5, 6)),
+        ("west", (5, 4)),
+        (" Up ", (4, 5)),
+    ])
+    def test_compass_words_and_case_are_accepted(self, env, direction, expected):
+        env.restart_env(agent_poses={"a0": (5, 5)})
+        new_pos, infos = env._apply_move("a0", {"direction": direction}, {"a0": {}})
+        assert new_pos == expected
+        assert "Move outcome" not in infos["a0"]
 
     def test_move_wraps_grid(self, env):
         env.restart_env(agent_poses={"a0": (5, 0)})
@@ -297,7 +312,19 @@ class TestBuildObs:
         env.pos_artifacts[pos].discard("inv_art")
         env.agent_inventories["a0"].add("inv_art")
         obs, _ = env._build_obs("a0")
-        assert any("inv_art" in s for s in obs["inventory"])
+        assert obs["inventory"] == ["A(text,movable): inv_art"]
+
+    def test_inventory_groups_artifacts_of_a_kind(self, env):
+        pos = env.agent_pos["a0"]
+        for name in ("kit_b", "kit_a"):
+            env.add_artifact(
+                pose=pos, art_type="text", art_name=name, payload="data",
+                creator="a0", lifespan=10,
+            )
+            env.pos_artifacts[pos].discard(name)
+            env.agent_inventories["a0"].add(name)
+        obs, _ = env._build_obs("a0")
+        assert obs["inventory"] == ["A(text,movable) x2: kit_a, kit_b"]
 
 
 # ---------------------------------------------------------------------------

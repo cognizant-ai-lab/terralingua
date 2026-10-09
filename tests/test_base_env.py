@@ -269,7 +269,7 @@ class TestStepBasic:
         e.add_agent("a0", "Alice", "text", position=(2, 2))
         e.restart_env(agent_poses={"a0": (2, 2)})
         long_msg = "a " * 200
-        e.step(
+        *_, infos = e.step(
             {
                 "a0": {
                     "action": "move",
@@ -278,8 +278,18 @@ class TestStepBasic:
                 }
             }
         )
-        # raw message must have been truncated
+        # raw message must have been truncated, and the sender told
         assert len(e.msg_raw["a0"]) < len(long_msg)
+        assert "5 tokens" in infos["a0"]["Message outcome"]
+
+    def test_short_message_gets_no_message_outcome(self, tmp_log):
+        e = make_env(tmp_log, max_message_length=5)
+        e.add_agent("a0", "Alice", "text", position=(2, 2))
+        e.restart_env(agent_poses={"a0": (2, 2)})
+        *_, infos = e.step(
+            {"a0": {"action": "move", "params": {"direction": "stay"}, "message": "hi"}}
+        )
+        assert "Message outcome" not in infos["a0"]
 
 
 # ---------------------------------------------------------------------------
@@ -546,6 +556,26 @@ class TestPassiveArtifacts:
             {"a0": {"action": "move", "params": {"direction": "stay"}}}
         )
         assert "Passive interaction result - Artifacts in inventory" in infos["a0"]
+
+    def test_repeated_passive_effects_collapse_to_a_count(self, env, monkeypatch):
+        pos = env.agent_pos["a0"]
+        for name in ("kit_a", "kit_b", "kit_c"):
+            env.add_artifact(
+                pose=pos, art_type="text", art_name=name, payload="same",
+                creator="a0", lifespan=100,
+            )
+            env.pos_artifacts[pos].discard(name)
+            env.agent_inventories["a0"].add(name)
+            env.artifact_location[name] = ("inv", "a0")
+            monkeypatch.setattr(
+                env.artifacts[name], "passive_effect",
+                lambda timestamp, agent_name: "Protective gear.",
+            )
+        *_, infos = env.step(
+            {"a0": {"action": "move", "params": {"direction": "stay"}}}
+        )
+        key = "Passive interaction result - Artifacts in inventory"
+        assert infos["a0"][key] == ["Protective gear. (x3)"]
 
 
 # ---------------------------------------------------------------------------

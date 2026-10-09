@@ -334,3 +334,15 @@ class TestSoloAgentPrompt:
         )
         assert '"message"' not in text
         assert '"action"' in text
+
+
+# ---------------------------------------------------------------------------
+# The movement rule names the directions the grid world accepts
+# ---------------------------------------------------------------------------
+
+
+class TestMovementDirections:
+    def test_grid_template_names_the_directions_the_env_accepts(self):
+        text = render_system_prompt("grid.j2", **_default_kwargs())
+        assert "up / down / left / right" in text
+        assert "north / south / east / west" not in text
