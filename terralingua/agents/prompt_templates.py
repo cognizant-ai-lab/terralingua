@@ -1,3 +1,5 @@
+import re
+
 """Prompt templates for LLM agents."""
 
 from pathlib import Path
@@ -22,7 +24,15 @@ def render_system_prompt(template_name: str, **kwargs) -> str:
     debug, solo (population capped at 1: social/broadcast content is
     suppressed; unpassed it is falsy, so existing callers render unchanged).
     """
-    return _jinja_env.get_template(template_name).render(**kwargs)
+    return tidy(_jinja_env.get_template(template_name).render(**kwargs))
+
+
+def tidy(text: str) -> str:
+    """Drop trailing spaces and collapse runs of blank lines to one: optional template blocks and the joins between
+    sections leave empty lines that only cost tokens."""
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip("\n") + "\n"
 
 
 AGENT_PROMPT = Template(
