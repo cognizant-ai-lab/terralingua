@@ -7,7 +7,7 @@
 {% block obs_detail %}- Each entry is {(rel_x, rel_y): element0 | element1 | ...} where you are at (0,0) (listed as <yourself>)
 - (rel_x, rel_y) are **relative coordinates** with respect to your position. These are relative coordinates, they will be different for each being POV!
 - Coordinates: rel_x increases to the East (right), rel_y increases to the North (up)
-- Elements: 'X' = blocked cell; numbers = food value; 'A(type, movable/fixed): name' = artifact; other beings by name
+- Elements: 'X' = blocked cell; {% if food_mechanism %}numbers = food value; {% endif %}'A(type, movable/fixed): name' = artifact; other beings by name
 - If multiple beings or artifacts are in the same cell, they are listed separated by |
 - The list includes only non-empty cells. If a coordinate is absent, assume that cell is empty and traversable.{% endblock %}
 

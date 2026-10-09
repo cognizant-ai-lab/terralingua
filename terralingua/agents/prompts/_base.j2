@@ -14,8 +14,8 @@ The observation is structured as:
 {% block obs_detail %}{% endblock %}
 
 You will receive also:
-    - the history of your past observations and selected actions
-    - a list of traits determining the way you act{% endblock %}
+    - the history of your past observations and selected actions{% if genome_string %}
+    - a list of traits determining the way you act{% endif %}{% endblock %}
 
 Note that:
 {% if finite_energy | default(true) %}{% if food_mechanism or (energy_upkeep | default(0)) > 0 or energy_death %}
