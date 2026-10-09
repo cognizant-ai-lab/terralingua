@@ -1657,7 +1657,7 @@ class BaseWorld(RolesMixin, ABC):
         for art in self.agent_inventories[agent]:
             artifact = self.artifacts[art]
             key = (str(artifact.art_type), bool(artifact.movable))
-            groups.setdefault(key, []).append(str(artifact.name))
+            groups.setdefault(key, []).append(str(artifact.display_name))
         lines = []
         for (art_type, movable), names in sorted(groups.items()):
             head = f"A({art_type},{'movable' if movable else 'fixed'})"

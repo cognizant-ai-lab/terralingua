@@ -420,7 +420,7 @@ class OpenGraphWorld(BaseWorld):
                     art = self.artifacts[art_name]
                     items.append(
                         f"A({art.art_type},"
-                        f"{'movable' if art.movable else 'fixed'}): {art.name}"
+                        f"{'movable' if art.movable else 'fixed'}): {art.display_name}"
                     )
 
             # exits = {
@@ -471,7 +471,7 @@ class OpenGraphWorld(BaseWorld):
         description = ACTION_TEXT["move"]["description"]
         if self.graph_cfg.move_cost_attr and neighbor_nodes:
             costs = ", ".join(f"{n} ({self._move_cost(pos, n)})" for n in neighbor_nodes)
-            description += f" Energy cost of each crossing from here: {costs}. Staying costs nothing extra."
+            description += f" Energy cost of each crossing from here: {costs}."
         return {
             "description": description,
             "params": {

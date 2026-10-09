@@ -45,9 +45,9 @@ def test_history_labels_are_relative_and_keep_the_window_order():
     prompt = _render(agent)
     history = prompt.split("=== Current State ===", 1)[0]
 
-    assert "last 2 steps, oldest to newest" in history
-    assert "History entry 1:" in history
-    assert "History entry 2:" in history
+    assert "t-2 to t-1, oldest first" in history
+    assert "History t-1:" in history
+    assert "History t-2:" in history
     assert "Step 1:" not in history
     assert "discarded" not in history
     assert history.index("earlier") < history.index("latest")

@@ -93,6 +93,11 @@ class Artifact:
         self.movable = movable
 
     @property
+    def display_name(self) -> str:
+        """What observations show for this artifact; the name stays the identifier actions use. Subclasses may shorten it."""
+        return self.name
+
+    @property
     @abstractmethod
     def actions(self) -> dict:
         raise NotImplementedError("Must specify artifact actions")

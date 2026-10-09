@@ -100,7 +100,7 @@ def create_artifact_text() -> dict:
                 "description": "Type of the artifact to create.",
                 "choices": list(types),
             },
-            "payload": f"Content of the artifact (e.g. a message, a code snippet, etc.). It depends on the artifact type: {types}",
+            "payload": f"Content of the artifact. Depends on the artifact type: {types}",
             "lifespan": "How many time steps the artifact will last (in number of steps, integer > 0. If -1 the artifact will never disappear)",
             "movable": {
                 "description": "Whether other agents can pick up this artifact. A fixed artifact stays at its position permanently.",

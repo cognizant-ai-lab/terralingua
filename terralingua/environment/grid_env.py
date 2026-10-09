@@ -420,7 +420,7 @@ class OpenGridWorld(BaseWorld):
                         for art_name in self.pos_artifacts[(gx, gy)]:
                             art = self.artifacts[art_name]
                             observation[rel_pos].append(
-                                f"A({art.art_type},{'movable' if art.movable else 'fixed'}): {art.name}"
+                                f"A({art.art_type},{'movable' if art.movable else 'fixed'}): {art.display_name}"
                             )
                 # CELLS OUTSIDE OF MAP
                 else:

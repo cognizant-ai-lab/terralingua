@@ -134,11 +134,12 @@ class AgentMixin:
         inventory_label = "Inventory (private artifacts)" if social_graph else "Inventory"
         history_txt = ""
         if self.history and self.max_history > 0:
-            history_txt = f"=== History (last {min(len(self.history), self.max_history)} steps, oldest to newest) ===\n"
+            shown = min(len(self.history), self.max_history)
+            history_txt = f"=== History (t-{shown} to t-1, oldest first) ===\n"
             for i, (past_obs, past_action, past_msg, past_params, past_info) in enumerate(
                 self.history[-self.max_history :], 1
             ):
-                history_txt += f"History entry {i}:\n"
+                history_txt += f"History t-{shown - i + 1}:\n"
                 if np.isfinite(formatted_obs["energy"]) and np.isfinite(past_obs["energy"]):
                     history_txt += f"\tEnergy: {past_obs['energy']}\n"
                 if np.isfinite(formatted_obs["time"]) and np.isfinite(past_obs["time"]):
@@ -195,6 +196,7 @@ class AgentMixin:
         )
         if "external_response" in formatted_obs:
             render_kwargs["external_responses"] = formatted_obs["external_response"]
+        render_kwargs.setdefault("external_actions", bool(getattr(self, "external_actions", False)))
         return prompt_templates.AGENT_PROMPT.render(**render_kwargs)
 
     def _build_prompt_sync(

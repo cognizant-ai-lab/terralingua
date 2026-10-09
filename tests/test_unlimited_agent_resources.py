@@ -47,7 +47,7 @@ def test_prompt_visibility_uses_actual_resources(tmp_path, kind, energy, remaini
         assert "Time left" not in agent.system_prompt
         assert "- Time" not in agent.system_prompt
     assert "simulation step 12" in prompt
-    assert "History entry 1" in prompt
+    assert "History t-1" in prompt
     assert "inf" not in prompt.lower().replace("info", "")
     agent.close()
 

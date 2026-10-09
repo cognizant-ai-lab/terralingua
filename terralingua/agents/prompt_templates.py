@@ -66,12 +66,12 @@ Previous INTERNAL MEMORY:
 
 {{ additional_info }}
 
-Host action receipts distinguish selected requests, vote overrides, received results,
+{% if external_actions | default(false) %}Host action receipts distinguish selected requests, vote overrides, received results,
 and observed effects. Preserve their original step when remembering
 important events. An accepted request alone does not establish its intended effect.
 Keep intended edits/messages pending until their execution is confirmed. Treat peers'
 completion reports as reports unless supported by a receipt or direct observation.
-
+{% endif %}
 === Available Actions & Params ===
 {{ actions }}
 
