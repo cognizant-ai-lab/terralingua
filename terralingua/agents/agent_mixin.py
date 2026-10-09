@@ -29,8 +29,16 @@ def _strip_response_keys(raw: str, hidden_keys: list) -> str:
     return json.dumps(payload, indent=2)
 
 
+# Keys stored by the world, shown to the being under a clearer label. The being reads
+# the info of step N while choosing the action of step N+1, so an outcome is always
+# the outcome of its previous action.
+DISPLAY_LABELS = {"Action outcome": "Previous action outcome"}
+
+
 def _format_info_fields(info: dict, social_graph: bool) -> str:
-    """Render fields without changing their stored keys or values."""
+    """Render fields without changing their stored keys or values.
+
+    The same rendering serves the current state and every history entry."""
     labels = {
         "Artifacts here": "Your public artifact contents",
         "Artifacts in your inventory": "Your private artifact contents",
@@ -47,7 +55,7 @@ def _format_info_fields(info: dict, social_graph: bool) -> str:
             )
             lines.append(f"{labels[key]}:\n{content}")
         else:
-            lines.append(f"{key}: {value}")
+            lines.append(f"{DISPLAY_LABELS.get(key, key)}: {value}")
     return "\n".join(lines)
 
 
@@ -155,8 +163,8 @@ class AgentMixin:
                     past_info = {k: v for k, v in past_info.items() if k != "external_context"}
                 if past_info is not None and len(past_info):
                     displayed_info = (
-                        _format_info_fields(past_info, social_graph=True)
-                        if social_graph and isinstance(past_info, dict)
+                        _format_info_fields(past_info, social_graph=social_graph)
+                        if isinstance(past_info, dict)
                         else str(past_info)
                     )
                     history_txt += f"\tAdditional info:\n{displayed_info}\n"

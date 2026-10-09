@@ -214,6 +214,6 @@ env.restart_env(seed=3, agent_poses={"a0": (3, 3)})
 infos = env.step({"a0": {"action": "move", "params": {"direction": "stay"}}})[-1]
 ```
 
-`infos[tag]` holds what the being will read: notes under their keys, and `"Action outcome"` for a string returned by `on_action`. `env.agent_avail_actions[tag]` is the menu for the next step. The world log is a JSONL file at `env.logger.save_path`. Keep the tests few: one per rule that matters.
+`infos[tag]` holds what the being will read: notes under their keys, and `"Action outcome"` for a string returned by `on_action` (the being reads it labelled "Previous action outcome"). `env.agent_avail_actions[tag]` is the menu for the next step. The world log is a JSONL file at `env.logger.save_path`. Keep the tests few: one per rule that matters.
 
 A test that composes a preset by name needs the working directory to hold it. The repository's `conftest.py` sets the working directory to the repository root for every test.

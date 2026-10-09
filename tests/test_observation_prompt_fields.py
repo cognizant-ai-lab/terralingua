@@ -163,3 +163,15 @@ def test_action_parameters_and_reply_schema_are_unchanged():
     assert '"params": {"key": "value"}' in prompt
     assert '"internal_memory":' in prompt
     assert "my memory" in prompt
+
+
+def test_history_additional_info_renders_like_the_current_state():
+    agent = _PromptAgent("graph.j2")
+    agent.history = [_entry(info={"Action outcome": "You waved.", "Clock": "Monday, 09:00, morning."})]
+    prompt = _render(agent, info={"Action outcome": "You moved.", "Clock": "Monday, 10:00, morning."})
+    history, current = prompt.split("=== Current State ===", 1)
+
+    assert "Previous action outcome: You waved.\nClock: Monday, 09:00, morning." in history
+    assert "Previous action outcome: You moved.\nClock: Monday, 10:00, morning." in current
+    assert "{'Action outcome'" not in prompt  # no raw dict anywhere
+    assert agent.history[0][4] == {"Action outcome": "You waved.", "Clock": "Monday, 09:00, morning."}  # stored key unchanged
