@@ -1369,12 +1369,8 @@ class BaseWorld(RolesMixin, ABC):
             if agent_tag not in infos:
                 infos[agent_tag] = {}
             infos[agent_tag]["available_actions"] = avail_actions
-            for key, lines in self._notes.pop(agent_tag, {}).items():
-                merged = "\n".join(lines)
-                existing = infos[agent_tag].get(key)
-                if existing is not None:
-                    merged = f"{existing}\n{merged}"
-                infos[agent_tag][key] = merged
+            infos[agent_tag].update(self.pending_notes(agent_tag, infos[agent_tag]))
+            self._notes.pop(agent_tag, None)
             if self.use_colors:
                 infos[agent_tag]["Your color"] = self.agent_colors.get(
                     agent_tag, "no color"
@@ -1581,6 +1577,19 @@ class BaseWorld(RolesMixin, ABC):
     def note(self, tag: str, key: str, text: str) -> None:
         """Append one line to the agent's next observation under `key`."""
         self._notes.setdefault(tag, {}).setdefault(key, []).append(str(text))
+
+    def pending_notes(self, tag: str, info: dict | None = None) -> Dict[str, str]:
+        """The notes written for `tag` this step and not delivered yet, merged as its next
+        observation will show them: one text per key, lines joined by newlines, after any
+        entry of the same key already in `info`. The world uses it to build the infos of a
+        step; a mechanic that runs late in the step (a recorder) reads here what the
+        earlier ones said."""
+        merged = {}
+        for key, lines in self._notes.get(tag, {}).items():
+            text = "\n".join(lines)
+            existing = (info or {}).get(key)
+            merged[key] = text if existing is None else f"{existing}\n{text}"
+        return merged
 
     def _kill(self, agent: str, reason: str | None = None) -> None:
         """Remove agent from environment. Dead agents leave food behind.

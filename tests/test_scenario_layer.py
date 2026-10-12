@@ -479,3 +479,12 @@ def test_persona_is_part_of_the_personality_and_survives_a_checkpoint(tmp_path):
     restored.set_state_ckpt(agent.get_state_ckpt())
     restored.update_system_prompt()
     assert "You like tea." in restored.system_prompt
+
+
+def test_pending_notes_merge_like_the_next_observation(tmp_path):
+    env = one_agent_env(tmp_path)
+    env.note("a0", "Health", "You feel feverish.")
+    env.note("a0", "Health", "Your energy drains faster.")
+    assert env.pending_notes("a0") == {"Health": "You feel feverish.\nYour energy drains faster."}
+    assert env.pending_notes("a0", {"Health": "Checked."}) == {"Health": "Checked.\nYou feel feverish.\nYour energy drains faster."}
+    assert env.pending_notes("nobody") == {}
