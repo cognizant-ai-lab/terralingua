@@ -45,6 +45,7 @@ BASE_KEYS = {
     "step_count",
     "mechanics",
     "pending_deaths",
+    "pending_departures",
     "no_appetite",
     "agent_affordances",
     "_roles",

@@ -36,11 +36,15 @@ identity wins.
 
 What a mechanic may read: env.transfers (this step's successful give, take,
 and give_artifact as (giver, receiver, kind)), env.deaths (records of the
-previous step's deaths), env.agents_within(tag, r), env.distance(a, b), and the
+previous step's deaths), env.departures (records of the beings that left the
+world alive in the previous step), env.departing (the tags queued to leave at the end of
+this step), env.agents_within(tag, r), env.distance(a, b), and the
 public agent and artifact tables. env.transfers is rebuilt every step and is
 not checkpointed.
 
 What a mechanic may write: env.note(tag, key, text), env.kill(tag, reason),
+env.depart(tag, reason) (the being leaves the world alive at the end of the step:
+no death, an AGENT_LEFT event, a record in env.departures the step after),
 env.add_artifact(..., to_inventory=tag), env.seed_artifact(...), agent energy,
 and env.no_appetite, the set of agents that leave food on their cell untouched.
 The world checks that set right after each move, so a tag added in on_step of

@@ -10,6 +10,7 @@ log = logging.getLogger(__name__)
 
 class Event(Enum):
     AGENT_DIED = auto()
+    AGENT_LEFT = auto()
     AGENT_ADDED = auto()
     AGENT_SPAWNED_SOLO = auto()
     AGENT_SPAWNED_PAIRED = auto()
@@ -81,6 +82,16 @@ class JSONLogger:
                 self.data[agent_tag]["agent_name"] = data["agent_name"]
             else:
                 raise ValueError(f"Dead agent {agent_tag} was never logged in")
+        if event_type == Event.AGENT_LEFT:
+            agent_tag = data["agent_tag"]
+            if agent_tag in self.data:
+                self.data[agent_tag]["departure_time"] = time
+                self.data[agent_tag]["departure_position"] = data["position"]
+                self.data[agent_tag]["age"] = time - self.data[agent_tag]["spawn_time"]
+                self.data[agent_tag]["energy"] = data["energy"]
+                self.data[agent_tag]["departure_reason"] = data["reason"]
+            else:
+                raise ValueError(f"Departed agent {agent_tag} was never logged in")
 
         if event_type in (Event.AGENT_SPAWNED_SOLO, Event.AGENT_SPAWNED_PAIRED):
             agent_tag = data["agent_tag"]

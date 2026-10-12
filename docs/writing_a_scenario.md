@@ -83,6 +83,8 @@ An action that exists only in the mechanic must be handled in `on_action`. The w
 | `env.distance(a, b)` | Distance between two positions in the world's own measure: Chebyshev on a torus grid, hops on a graph. |
 | `env.transfers` | This step's successful `give`, `take`, and `give_artifact` as `(giver, receiver, kind)`. Rebuilt every step. |
 | `env.deaths` | Records of the previous step's deaths: tag, name, position, reason, artifacts, step. |
+| `env.departures` | Records of the beings that left the world alive in the previous step, through `env.depart`: the same fields. |
+| `env.departing` | Tags queued to leave at the end of this step. A mechanic's `on_step` may leave them alone. |
 | `env.rng` | A numpy generator seeded by `run.seed`. Use it for every random choice, so a run repeats. |
 | `env.logger` | The world log. `None` in some tests. |
 | `env.log_path` | The run folder, `logs/<exp_name>/`. A mechanic may write its own files there. |
@@ -93,6 +95,7 @@ An action that exists only in the mechanic must be handled in `on_action`. The w
 |---|---|
 | `env.note(tag, key, text)` | Adds a line under `key` to the being's next observation. Several notes under one key are joined with line breaks. |
 | `env.kill(tag, reason)` | Queues a death. The world kills the being in this step's death phase. The reason appears in the `AGENT_DIED` event. |
+| `env.depart(tag, reason)` | Queues a departure. The being leaves the world alive at the end of the step, before the deaths: no death is recorded, no food is dropped, what it carried stays where it stood, and the runner retires it like a dead being. The reason appears in the `AGENT_LEFT` event. |
 | `env.agent_energy[tag] -= amount` | Energy changes take effect at once. |
 | `env.seed_artifact(pose, art_type, name, payload, lifespan, movable=True, to_inventory=None, **params)` | Places an artifact without an energy check. Returns `(message, final_name)`. The name gets a suffix on collision. `params` go to the artifact class. |
 | `env.add_artifact(pose, art_type, name, payload, creator, lifespan, movable=True, to_inventory=None, **params)` | The same, charged to `creator` at the world's artifact cost. |

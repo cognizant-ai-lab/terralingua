@@ -222,12 +222,15 @@ class BaseWorld(RolesMixin, ABC):
         self.agent_spawn: Dict[str, List[str]] = {}
         self.agent_names: Dict[str, str] = {}
         self._pending_kills: Dict[str, str | None] = {}
+        self._pending_departures: Dict[str, str] = {}
         self._notes: Dict[str, Dict[str, List[str]]] = {}
         self.mechanics: List[Mechanic] = []
         self.no_appetite: Set[str] = set()
         self.transfers: List[Tuple[str, str, str]] = []
         self.deaths: List[dict] = []
         self._new_deaths: List[dict] = []
+        self.departures: List[dict] = []
+        self._new_departures: List[dict] = []
         # effect["type"] -> handler(agent, params, infos, affordance).
         self._affordance_effects: Dict[
             str, Callable[[str, dict, dict, LocationAffordance], None]
@@ -433,11 +436,14 @@ class BaseWorld(RolesMixin, ABC):
         self.pos_to_agent = defaultdict(set)
         self.agent_spawn = {}
         self._pending_kills.clear()
+        self._pending_departures.clear()
         self._notes = {}
         self.no_appetite = set()
         self.transfers = []
         self.deaths = []
         self._new_deaths = []
+        self.departures = []
+        self._new_departures = []
         self.food.clear()
         self.step_count = 0
         self.chat = {}
@@ -516,6 +522,7 @@ class BaseWorld(RolesMixin, ABC):
         done_dict = {a: False for a in self.agent_registry}
         self.transfers = []
         self.deaths, self._new_deaths = self._new_deaths, []
+        self.departures, self._new_departures = self._new_departures, []
         self._ensure_initial_roles()
 
         # ---- Process actions from acting agents ----
@@ -1335,6 +1342,20 @@ class BaseWorld(RolesMixin, ABC):
                 self.agent_energy[a] -= self.energy_upkeep
             self.agent_time[a] -= 1
 
+        # ---- handle departures ----
+        # Agents a mechanic sent out of the world alive (depart). They leave
+        # before the deaths are settled, so a kill queued for one of them in
+        # the same step is dropped.
+        gone = {
+            a: self._build_obs(a)[0]
+            for a in self._pending_departures  # in the order they acted
+            if a in self.agent_registry
+        }
+        for a in gone:
+            self._depart(a, reason=self._pending_departures[a])
+            done_dict[a] = True
+        self._pending_departures.clear()
+
         # ---- handle deaths ----
         # Energy death is independently configurable; lifespan and explicit
         # kills apply regardless of the food setting.
@@ -1376,6 +1397,7 @@ class BaseWorld(RolesMixin, ABC):
                     agent_tag, "no color"
                 )
         observations.update(dead)  # include dead agents' last obs
+        observations.update(gone)  # and the last obs of those who left
         self._notes.clear()
 
         self.step_count += 1
@@ -1519,6 +1541,17 @@ class BaseWorld(RolesMixin, ABC):
         """Queue a death. The world kills the agent in this step's death phase."""
         self._pending_kills[tag] = reason
 
+    def depart(self, tag: str, reason: str) -> None:
+        """Queue a departure: the agent leaves the world alive in this step's
+        death phase, before the deaths. It is not a death: the record goes to
+        `departures`, the log gets an AGENT_LEFT event, no food is dropped."""
+        self._pending_departures[tag] = reason
+
+    @property
+    def departing(self) -> Set[str]:
+        """Tags queued to leave the world at the end of this step (depart)."""
+        return set(self._pending_departures)
+
     def distance(self, pos_a, pos_b) -> float:
         """Distance between two positions in this world's own measure."""
         raise NotImplementedError
@@ -1598,9 +1631,6 @@ class BaseWorld(RolesMixin, ABC):
         from the agent's lifespan and energy.
         """
         self._release_role(agent, cause="death")
-        self._forget_successor(agent)
-        self.agent_affordances.pop(agent, None)
-        self.no_appetite.discard(agent)
         if reason is not None:
             announcement = f"☠️ Agent {self.agent_names[agent]}({agent}) died: {reason}."
         elif self.agent_time[agent] <= 0:
@@ -1618,29 +1648,11 @@ class BaseWorld(RolesMixin, ABC):
             reason = "unknown"
         log.info(announcement)
 
-        self.agent_registry.discard(agent)
-        self.agent_genomes.pop(agent, None)
-        energy = self.agent_energy.pop(agent, 0)
-        self.agent_time.pop(agent, None)
-        self.msg_raw.pop(agent, None)
-        pos = self.agent_pos.pop(agent, None)
-
-        dropped: List[str] = []
-        if pos is not None:
-            artifacts = self.agent_inventories.pop(agent, None)
-            if artifacts:
-                dropped = sorted(artifacts)
-                for art_name in artifacts:
-                    self.artifacts[art_name].pose = pos
-                    self.pos_artifacts[pos].add(art_name)
-                    self.artifact_location[art_name] = ("map", pos)
-
-            self.pos_to_agent[pos].discard(agent)
-
-            if self.drop_food_on_death:
-                self.food[pos] = self.food.get(pos, 0) + max(
-                    self._max_food_value, energy
-                )
+        energy, pos, dropped = self._remove_agent(agent)
+        if pos is not None and self.drop_food_on_death:
+            self.food[pos] = self.food.get(pos, 0) + max(
+                self._max_food_value, energy
+            )
 
         self._new_deaths.append({
             "tag": agent,
@@ -1661,6 +1673,62 @@ class BaseWorld(RolesMixin, ABC):
                 energy=energy,
                 reason=reason,
             )
+
+    def _depart(self, agent: str, reason: str) -> None:
+        """Remove a living agent from the world: it leaves, it does not die.
+        No food is dropped; what it carried stays where it stood. `reason`
+        names the cause in the record and the log."""
+        self._release_role(agent, cause="departure")
+        log.info(
+            f"🚪 Agent {self.agent_names[agent]}({agent}) left the world: {reason}."
+        )
+        energy, pos, dropped = self._remove_agent(agent)
+        self._new_departures.append({
+            "tag": agent,
+            "name": self.agent_names[agent],
+            "position": pos,
+            "reason": reason,
+            "artifacts": dropped,
+            "step": self.step_count,
+        })
+        if self.logger:
+            self.logger.log(
+                time=self.step_count,
+                event_type=Event.AGENT_LEFT,
+                agent_tag=agent,
+                agent_name=self.agent_names[agent],
+                position=pos,
+                step=self.step_count,
+                energy=energy,
+                reason=reason,
+            )
+
+    def _remove_agent(self, agent: str) -> Tuple[float, Any, List[str]]:
+        """Take an agent out of every table. Its inventory is dropped where it
+        stood; its name stays in `agent_names`. Returns (energy, position,
+        dropped artifact names)."""
+        self._forget_successor(agent)
+        self.agent_affordances.pop(agent, None)
+        self.no_appetite.discard(agent)
+        self.agent_registry.discard(agent)
+        self.agent_genomes.pop(agent, None)
+        energy = self.agent_energy.pop(agent, 0)
+        self.agent_time.pop(agent, None)
+        self.msg_raw.pop(agent, None)
+        pos = self.agent_pos.pop(agent, None)
+
+        dropped: List[str] = []
+        if pos is not None:
+            artifacts = self.agent_inventories.pop(agent, None)
+            if artifacts:
+                dropped = sorted(artifacts)
+                for art_name in artifacts:
+                    self.artifacts[art_name].pose = pos
+                    self.pos_artifacts[pos].add(art_name)
+                    self.artifact_location[art_name] = ("map", pos)
+
+            self.pos_to_agent[pos].discard(agent)
+        return energy, pos, dropped
 
     def _inventory_lines(self, agent: str) -> List[str]:
         """One line per kind of artifact; several of a kind share it, counted."""
@@ -2373,6 +2441,7 @@ class BaseWorld(RolesMixin, ABC):
             "step_count": self.step_count,
             "mechanics": {m.name: copy.deepcopy(m.state) for m in self.mechanics},
             "pending_deaths": copy.deepcopy(self._new_deaths),
+            "pending_departures": copy.deepcopy(self._new_departures),
             "no_appetite": sorted(self.no_appetite),
             "logger_save_path": str(self.logger.save_path) if self.logger else None,
             "logger_data": (
@@ -2396,6 +2465,9 @@ class BaseWorld(RolesMixin, ABC):
                 mechanic.state.clear()
                 mechanic.state.update(copy.deepcopy(saved_mechanics[mechanic.name]))
         self._new_deaths = copy.deepcopy(state_ckpt.get("pending_deaths", []))
+        self._new_departures = copy.deepcopy(
+            state_ckpt.get("pending_departures", [])
+        )
         self.no_appetite = set(state_ckpt.get("no_appetite", []))
         self.agent_affordances = {
             tag: [LocationAffordance.from_dict(d) for d in affs]

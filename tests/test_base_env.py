@@ -3,6 +3,8 @@ Tests for terralingua/environment/base_env.py (BaseWorld), exercised through
 the concrete OpenGridWorld subclass so all abstract methods are available.
 """
 
+import json
+
 import numpy as np
 import pytest
 
@@ -720,6 +722,99 @@ class TestKill:
         env._kill("a0")
         assert "carried" in env.pos_artifacts[pos]
         assert env.artifacts["carried"].pose == pos
+
+
+# ---------------------------------------------------------------------------
+# depart / _depart
+# ---------------------------------------------------------------------------
+
+
+STAY = {"action": "move", "params": {"direction": "stay"}}
+
+
+def world_log(env):
+    env.logger.fp.flush()
+    return [json.loads(line) for line in env.logger.save_path.read_text().splitlines()]
+
+
+class TestDepart:
+    def test_the_agent_leaves_without_a_death(self, tmp_log):
+        e = make_env(tmp_log, drop_food_on_death=True, init_food=0)  # no food to eat: the reward can only be a penalty
+        e.add_agent("a0", "Alice", "text", position=(2, 2))
+        e.add_agent("a1", "Bob", "text", position=(2, 3))
+        e.restart_env(agent_poses={"a0": (2, 2), "a1": (2, 3)})
+        food_before = e.food.get((2, 3), 0)
+        e.depart("a1", "took the ferry")
+        assert e.departing == {"a1"} and "a1" in e.agent_registry  # queued: it leaves at the end of the step
+        obs, rewards, dones, _, infos = e.step({"a0": STAY, "a1": STAY})
+        assert dones == {"a0": False, "a1": True}
+        assert rewards["a1"] == 0  # a death costs 100; leaving costs nothing
+        assert "a1" in obs  # its last observation, as for a dead agent
+        assert e.departing == set()
+        assert "a1" not in e.agent_registry and "a1" not in e.agent_pos
+        assert "a1" not in e.pos_to_agent[(2, 3)] and "a1" not in e.agent_energy
+        assert e.agent_names["a1"] == "Bob"  # the name stays, as for the dead
+        assert e.food.get((2, 3), 0) == food_before  # no food dropped
+        assert e.deaths == [] and e.departures == []  # readable the step after, as the deaths are
+        e.step({"a0": STAY})
+        assert e.deaths == []
+        assert e.departures == [
+            {"tag": "a1", "name": "Bob", "position": (2, 3), "reason": "took the ferry", "artifacts": [], "step": 0}
+        ]
+        e.step({"a0": STAY})
+        assert e.departures == []
+        events = world_log(e)
+        left = [ev for ev in events if ev["event"] == "AGENT_LEFT"]
+        assert len(left) == 1 and left[0]["agent_tag"] == "a1" and left[0]["agent_name"] == "Bob"
+        assert left[0]["reason"] == "took the ferry" and left[0]["position"] == [2, 3] and left[0]["timestamp"] == 0
+        assert not any(ev["event"] == "AGENT_DIED" for ev in events)
+        assert e.logger.data["a1"]["departure_reason"] == "took the ferry"
+        assert e.logger.data["a1"]["departure_time"] == 0 and "death_time" not in e.logger.data["a1"]
+
+    def test_what_it_carried_stays_where_it_stood(self, env):
+        env.add_artifact(
+            pose=(0, 0), art_type="text", art_name="carried", payload="x", creator="a0", lifespan=100
+        )
+        env.pos_artifacts[(0, 0)].discard("carried")
+        env.agent_inventories["a0"].add("carried")
+        env.artifacts["carried"].pose = "Inv(a0)"
+        env.depart("a0", "left")
+        env.step({"a0": STAY})
+        assert "carried" in env.pos_artifacts[(2, 2)] and env.artifacts["carried"].pose == (2, 2)
+        assert env.get_state_ckpt()["pending_departures"][0]["artifacts"] == ["carried"]
+
+    def test_a_departure_wins_over_a_kill_queued_in_the_same_step(self, two_agent_env):
+        e = two_agent_env
+        e.depart("a1", "left")
+        e.kill("a1", "sickness")
+        e.step({"a0": STAY, "a1": STAY})
+        ckpt = e.get_state_ckpt()
+        assert [d["tag"] for d in ckpt["pending_departures"]] == ["a1"] and ckpt["pending_deaths"] == []
+        assert [ev["event"] for ev in world_log(e) if ev["event"] in ("AGENT_LEFT", "AGENT_DIED")] == ["AGENT_LEFT"]
+
+    def test_pending_departures_survive_a_checkpoint_and_a_restart_drops_them(self, tmp_log):
+        e = make_env(tmp_log)
+        e.add_agent("a0", "Alice", "text", position=(2, 2))
+        e.add_agent("a1", "Bob", "text", position=(2, 3))
+        e.restart_env(agent_poses={"a0": (2, 2), "a1": (2, 3)})
+        e.depart("a1", "left")
+        e.step({"a0": STAY, "a1": STAY})
+        ckpt = e.get_state_ckpt()
+        other = make_env(tmp_log / "other")
+        other.add_agent("a0", "Alice", "text", position=(2, 2))
+        other.add_agent("a1", "Bob", "text", position=(2, 3))
+        other.restart_env(agent_poses={"a0": (2, 2), "a1": (2, 3)})
+        other.set_state_ckpt(ckpt)
+        assert "a1" not in other.agent_registry
+        other.step({"a0": STAY})
+        assert [d["tag"] for d in other.departures] == ["a1"]
+        third = make_env(tmp_log / "third")
+        third.add_agent("a0", "Alice", "text", position=(2, 2))
+        third.restart_env(agent_poses={"a0": (2, 2)})
+        third.depart("a0", "left")
+        third.restart_env(agent_poses={"a0": (2, 2)})  # a restart forgets the queue
+        third.step({"a0": STAY})
+        assert "a0" in third.agent_registry and third.get_state_ckpt()["pending_departures"] == []
 
 
 # ---------------------------------------------------------------------------
