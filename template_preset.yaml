@@ -13,7 +13,7 @@ config:
   agent:
     agents_name_prefix: "being"  # str. Prefix for agent names (e.g. being0, being1)
     scenario_specific_instructions: "none"  # str. Scenario instructions injected into the system prompt: a builtin name ['base', 'creative', 'none', 'survival'] or a path to an instructions file (a Markdown file inside the scenario folder, rendered with Jinja).
-    personas_path: null  # str | None. JSON file with personas for the first beings, at the initial population and at respawns, in creation order. Each entry is the persona text, or an object with 'persona', an optional 'name' and an optional 'count' (default 1). A persona from the scenario wins over the file.
+    personas_path: null  # str | None. JSON file with personas for the first beings, at the initial population and at respawns, in creation order. Each entry is the persona text, or an object with 'persona', an optional 'name' and an optional 'count' (default 1). A persona from the scenario wins over the file. Other keys of an entry, such as a role, travel with the persona to the scenario.
     genome: "ocean_5"  # str. Agent genome type
     internal_memory_size: 500  # int. Internal memory token budget. Zero disables private memory.
     max_history: 10  # int. Max number of interactions stored per agent
@@ -42,6 +42,7 @@ config:
     dynamic_grid_step: 10  # int. Rows/cols added to each side when the grid expands
     grid_size: 50  # int. Grid dimension
     inert_artifacts: false  # bool. Artifacts cannot be interacted with
+    show_nearby_artifact_names: true  # bool. Observation items name every artifact in view ('A(type,fixed): name'); false shows one count per artifact type per node or cell ('2 text'). Names and states stay in the action menus and under 'Artifacts here'
     init_agents: 20  # int. Initial agent count
     init_human_agents: 0  # int. Initial human agent count
     init_agent_energy: 50  # int. Initial energy per agent
