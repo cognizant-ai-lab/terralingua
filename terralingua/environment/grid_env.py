@@ -308,23 +308,27 @@ class OpenGridWorld(BaseWorld):
             self._get_food_distribution()
 
         if not self.static_food:
-            # Rejection sampling: draw candidates from the base distribution
-            # and accept the first cell that is unoccupied. This avoids
-            # rebuilding an O(G²) masked array on every spawn.
-            n = self.grid_size * self.grid_size
-            for _ in range(max(100, n)):
-                idx = int(self.rng.choice(n, p=self._spawn_dist_flat))
-                y, x = divmod(idx, self.grid_size)
-                p = (int(x), int(y))
-                occupied = (
-                    bool(self.pos_to_agent[p])
-                    or p in self.food
-                    or bool(self.pos_artifacts[p])
-                )
-                if not occupied:
-                    self.food[p] = food_value
-                    return
-            log.warning("No available cell with nonzero probability to respawn food")
+            # Same law as rejection sampling with max(100, n) draws, in one
+            # step: fail with probability (1 - m) ** K where m is the spawn
+            # mass on free cells, else draw a free cell proportionally.
+            g = self.grid_size
+            n = g * g
+            free = self._spawn_dist_flat.copy()
+            for (x, y), agents in self.pos_to_agent.items():
+                if agents:
+                    free[y * g + x] = 0.0
+            for (x, y) in self.food:
+                free[y * g + x] = 0.0
+            for (x, y), arts in self.pos_artifacts.items():
+                if arts:
+                    free[y * g + x] = 0.0
+            m = float(free.sum())
+            if m <= 0.0 or self.rng.random() < (1.0 - m) ** max(100, n):
+                log.warning("No available cell with nonzero probability to respawn food")
+                return
+            idx = int(self.rng.choice(n, p=free / m))
+            y, x = divmod(idx, g)
+            self.food[(int(x), int(y))] = food_value
         else:
             if len(self.empty_food):
                 idx = self.rng.integers(0, len(self.empty_food))
