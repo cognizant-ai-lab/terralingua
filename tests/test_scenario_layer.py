@@ -128,6 +128,7 @@ class CountingMechanic(Mechanic):
     def __init__(self):
         super().__init__()
         self.calls = []
+        self.actors = []
 
     def on_menu(self, env, tag, menu):
         self.calls.append("menu")
@@ -137,6 +138,7 @@ class CountingMechanic(Mechanic):
 
     def on_action(self, env, tag, action, params):
         self.calls.append("action")
+        self.actors.append(tag)
         self.state["energy_seen"] = {t: float(e) for t, e in env.agent_energy.items()}
         if action == "move" and params.get("direction") == "north":
             return "You cannot go north."
@@ -190,7 +192,9 @@ def test_transfers_and_deaths_are_recorded_for_the_mechanic(tmp_path):
         {"a0": {"action": "give", "params": {"target": "Bob", "amount": 5}}, "a1": STAY}
     )
     assert mechanic.state["transfers"] == [("a0", "a1", "give")]
-    assert mechanic.state["energy_seen"]["a1"] == 105  # a1 acted after a0's gift landed
+    # The order of a step's actions is random. The second action sees the first applied.
+    gift_landed_first = mechanic.actors[-2:] == ["a0", "a1"]
+    assert mechanic.state["energy_seen"]["a1"] == (105 if gift_landed_first else 100)
     assert infos["a0"]["Counter"] == "step ran"  # written in on_step, seen the same step
     env.kill("a1", "sickness")
     env.step({"a0": STAY, "a1": STAY})
@@ -259,7 +263,8 @@ def test_load_scenario_validates_options_and_builds_mechanics(monkeypatch):
 
 
 class GadgetArtifact(Artifact):
-    description = "A gadget with a charge."
+    type_description = "A gadget with a charge."
+    payload_description = "No content is required."
 
     def __init__(self, *args, charge=1, **kwargs):
         self.charge = int(charge)
@@ -488,3 +493,11 @@ def test_pending_notes_merge_like_the_next_observation(tmp_path):
     assert env.pending_notes("a0") == {"Health": "You feel feverish.\nYour energy drains faster."}
     assert env.pending_notes("a0", {"Health": "Checked."}) == {"Health": "Checked.\nYou feel feverish.\nYour energy drains faster."}
     assert env.pending_notes("nobody") == {}
+
+
+def test_a_malformed_messages_field_sends_nothing_and_tells_the_sender(tmp_path):
+    env = two_agent_env(tmp_path, CountingMechanic())
+    obs, _, _, _, infos = env.step({"a0": {**STAY, "messages": "hello all"}, "a1": {**STAY, "messages": ["x"]}})
+    assert obs["a1"]["incoming_broadcasts"] == {} and obs["a0"]["incoming_broadcasts"] == {}
+    assert "Nothing was sent" in infos["a0"]["Message delivery"]
+    assert "Nothing was sent" in infos["a1"]["Message delivery"]

@@ -239,7 +239,7 @@ export function connectDashboardWS() {
       if (msg.type === "child_agent") {
         if (agentStore.has(msg.parent_tag)) {
           const pd = agentStore.get(msg.parent_tag) || {};
-          agentStore.trackAgent(msg.agent_tag, msg.token, { model: pd.model || '' });
+          agentStore.trackAgent(msg.agent_tag, msg.token, { model: msg.model || pd.model || '' });
         }
         return;
       }

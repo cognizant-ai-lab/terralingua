@@ -65,12 +65,13 @@ def test_runner_uses_actual_world_settings(
         reproduction_cost=20 if spawn_allowed else -1,
         spawn_allowed=spawn_allowed,
         max_connections=max_connections,
-        stay_action={"action": "noop", "params": {}, "message": ""},
+        stay_action={"action": "noop", "params": {}, "messages": {}},
     )
     runner.exp_logdir = tmp_path
     runner.external_managers = []
     runner.hidden_external_keys = []
     runner.connection_manager = None
+    runner.server_instructions = ""
     if kind == "llm":
         agent = runner._make_llm_agent("a0", "Alice", NoTraitsGenome())
     else:

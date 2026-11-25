@@ -1,7 +1,6 @@
-import re
-
 """Prompt templates for LLM agents."""
 
+import re
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, Template
@@ -20,6 +19,7 @@ def render_system_prompt(template_name: str, **kwargs) -> str:
     (e.g. "grid.j2"). All `**kwargs` are passed through to Jinja's render —
     typical flags: agent_name, food_mechanism, use_internal_memory,
     use_inventory, artifact_creation, external_actions, max_message_length,
+    allow_broadcasts (false: the reply format and the rules name private messages only),
     internal_memory_size, scenario_specific_instructions, genome_string,
     debug, solo (population capped at 1: social/broadcast content is
     suppressed; unpassed it is falsy, so existing callers render unchanged).
@@ -40,7 +40,8 @@ AGENT_PROMPT = Template(
 {{ history }}
 
 === Current State ===
-{% if social_graph %}Social observation:{% else %}Observation:{% endif %}
+{% if step is defined and step is not none %}Step: {{ step }}
+{% endif %}{% if social_graph %}Social observation:{% else %}Observation:{% endif %}
 {{ observation }}
 {% if not solo %}
 Incoming messages:
@@ -52,7 +53,7 @@ External responses:
 {% endif %}
 
 {% if finite_energy | default(true) %}Energy: {{ energy }}{% endif %}
-{% if finite_lifespan | default(true) %}Remaining lifespan (steps): {{ time }}{% endif %}
+{% if finite_lifespan | default(true) %}You have lived {{ life_spent }}% of your lifespan.{% endif %}
 
 {% if use_inventory %}
 Inventory{% if social_graph %} (private artifacts){% endif %}:
@@ -80,7 +81,7 @@ Please answer ONLY JSON and *EXACTLY* in this json format (Do NOT include any ot
 ```json
 {
     "action": "<one of {{ action_keys }}>",{% if not solo %}
-    "message": "<your broadcasted message, max {{ max_message_length }} tokens, or leave blank>",{% endif %}
+    "messages": {% if allow_broadcasts | default(true) %}{"broadcast": "<text for every being that can hear you>", "<name>": "<private direct message>"}{% else %}{"<name>": "<private direct message>"}{% endif %},{% endif %}
     "params": {"key": "value"}{% if use_internal_memory %},
     "internal_memory": "<internal memory object containing things you wish to remember in the next turn. Limited to {{ internal_memory_size }} tokens. Keep it concise.>"{% endif %}
 }
@@ -98,7 +99,7 @@ Please answer ONLY JSON and *EXACTLY* in this json format (Do NOT include any ot
 ```json
 {
     "action": "<one of {{ action_keys|join(', ') }}>",{% if not solo %}
-    "message": "<your broadcasted message, or leave blank>",{% endif %}
+    "messages": {% if allow_broadcasts | default(true) %}{"broadcast": "<text for every being that can hear you>", "<name>": "<private direct message>"}{% else %}{"<name>": "<private direct message>"}{% endif %},{% endif %}
     "params": {"key": "value"}{% if use_internal_memory %},
     "internal_memory": "<2-3 concise sentences ...>"{% endif %}
 }

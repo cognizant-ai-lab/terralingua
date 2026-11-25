@@ -2,7 +2,7 @@
 RemoteAgent: an agent whose decisions are made by an external client over WebSocket.
 
 The runner calls build_payload() to get the prompt dict to send to the client.
-The client responds with {action, message, params} JSON, which the ConnectionManager
+The client responds with {action, messages, params} JSON, which the ConnectionManager
 stores in its action buffer. The runner drains the buffer after the window expires.
 
 This agent does NOT have a select_action() method — it is not dispatched via
@@ -29,7 +29,7 @@ from terralingua.genome.ocean_5 import Genome as Ocean5Genome
 
 logger = logging.getLogger(__name__)
 
-_STAY_ACTION = {"action": "move", "message": "", "params": {"direction": "stay"}}
+_STAY_ACTION = {"action": "move", "messages": {}, "params": {"direction": "stay"}}
 
 
 class RemoteAgent(AgentMixin):
@@ -63,10 +63,12 @@ class RemoteAgent(AgentMixin):
         spawn_allowed: bool = True,
         max_connections: int | None = None,
         max_message_length: int = 200,
+        allow_broadcasts: bool = True,
         energy_death: bool | None = None,
         energy_upkeep: int | None = None,
         finite_energy: bool = True,
         finite_lifespan: bool = True,
+        stay_action: dict | None = None,
     ):
         self.agent_name = agent_name
         self.agent_tag = agent_tag
@@ -74,6 +76,7 @@ class RemoteAgent(AgentMixin):
         self.agent_type: str = "remote_llm"
         self.connection_manager = connection_manager
         self.timeout_s = timeout_s
+        self.stay_action = stay_action or {**_STAY_ACTION, "messages": {}, "params": {"direction": "stay"}}
         self.system_prompt_template = system_prompt_template
         self.use_inventory = use_inventory
         self.artifact_creation = artifact_creation
@@ -84,6 +87,7 @@ class RemoteAgent(AgentMixin):
         self.finite_energy = finite_energy
         self.finite_lifespan = finite_lifespan
         self.external_actions = external_actions
+        self.names_by_tag: dict = {}
         self.internal_memory_size = internal_memory_size
         self.verbose = verbose
         self.max_history = max_history
@@ -91,6 +95,7 @@ class RemoteAgent(AgentMixin):
         self.spawn_allowed = spawn_allowed
         self.max_connections = max_connections
         self.max_message_length = max_message_length
+        self.allow_broadcasts = allow_broadcasts
 
         self.genome = Ocean5Genome().random() if genome is None else genome
         self.history: list = []
@@ -142,6 +147,7 @@ class RemoteAgent(AgentMixin):
             spawn_allowed=self.spawn_allowed,
             max_connections=self.max_connections,
             max_message_length=self.max_message_length,
+            allow_broadcasts=self.allow_broadcasts,
         ).strip()
 
     def build_payload(
@@ -190,12 +196,12 @@ class RemoteAgent(AgentMixin):
         """
         formatted_obs = self._format_observation(obs)
         act = action.get("action", "move")
-        msg = action.get("message", "")
+        msgs = action.get("messages", {})
         params = action.get("params", {"direction": "stay"})
         internal_memory = action.get("internal_memory", "")
         self.internal_memory = self.validate_internal_memory(internal_memory)
 
-        self.history.append((formatted_obs, act, msg, params, info))
+        self.history.append((formatted_obs, act, msgs, params, info))
         self.history = self.history[-self.max_history:] if self.max_history > 0 else []
 
     async def select_action_async(
@@ -211,7 +217,10 @@ class RemoteAgent(AgentMixin):
         """Build payload → send over WebSocket → await response → return action."""
         cm = self.connection_manager
         if cm is None:
-            return {**_STAY_ACTION, "source": "default", "default_reason": "no_connection"}
+            return self.record_default_action(
+                obs, available_actions, info, time,
+                {**self.stay_action, "source": "default", "default_reason": "no_connection"},
+            )
 
         payload = await asyncio.to_thread(
             self.build_payload, obs, available_actions, reward, info, time
@@ -219,16 +228,12 @@ class RemoteAgent(AgentMixin):
         await cm.send_prompt(self.agent_tag, payload)
         action = await cm.wait_for_response(self.agent_tag, self.timeout_s)
         self.record_action(obs, action, info)
-        self.logger.log(
-            agent_name=self.agent_name,
-            agent_tag=self.agent_tag,
-            observation=obs,
-            available_actions=available_actions,
-            action=action,
-            time=str(time),
-            internal_memory=self.internal_memory,
-            input_prompt=payload.get("user_prompt", ""),
-        )
+        self.turn_record = {
+            "available_actions": available_actions,
+            "observation": obs,
+            "action": action,
+            "input_prompt": payload.get("user_prompt", ""),
+        }
         return action
 
     # ------------------------------------------------------------------
@@ -243,6 +248,7 @@ class RemoteAgent(AgentMixin):
             "motivation_prompt": self.motivation_prompt,
             "system_prompt": self.system_prompt,
             "system_prompt_template": self.system_prompt_template,
+            "stay_action": self.stay_action,
             "use_inventory": self.use_inventory,
             "artifact_creation": self.artifact_creation,
             "food_mechanism": self.food_mechanism,
@@ -255,6 +261,7 @@ class RemoteAgent(AgentMixin):
             "spawn_allowed": self.spawn_allowed,
             "max_connections": self.max_connections,
             "max_message_length": self.max_message_length,
+            "allow_broadcasts": self.allow_broadcasts,
             "genome": self.genome.as_dict(),
             "genome_class": f"{self.genome.__class__.__module__}:{self.genome.__class__.__name__}",
             "internal_memory_size": self.internal_memory_size,
@@ -273,6 +280,7 @@ class RemoteAgent(AgentMixin):
         self.finite_energy = state_ckpt["finite_energy"]
         self.finite_lifespan = state_ckpt["finite_lifespan"]
         self.system_prompt_template = state_ckpt["system_prompt_template"]
+        self.stay_action = state_ckpt.get("stay_action", self.stay_action)
         self.use_inventory = state_ckpt["use_inventory"]
         self.artifact_creation = state_ckpt["artifact_creation"]
         self.food_mechanism = state_ckpt["food_mechanism"]
@@ -283,6 +291,7 @@ class RemoteAgent(AgentMixin):
         self.spawn_allowed = state_ckpt.get("spawn_allowed", self.spawn_allowed)
         self.max_connections = state_ckpt.get("max_connections", self.max_connections)
         self.max_message_length = state_ckpt.get("max_message_length", self.max_message_length)
+        self.allow_broadcasts = state_ckpt.get("allow_broadcasts", self.allow_broadcasts)
         self.internal_memory_size = state_ckpt["internal_memory_size"]
         self.internal_memory = self.validate_internal_memory(state_ckpt.get("internal_memory", ""))
         self.history = state_ckpt.get("history", [])

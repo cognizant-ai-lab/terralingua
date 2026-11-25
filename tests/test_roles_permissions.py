@@ -105,7 +105,7 @@ def make_env(kind, tmp_path, n_agents=6, topology="complete", roles=True):
 
 def step_one(env, actor, action, params=None):
     _, _, _, _, infos = env.step(
-        {actor: {"action": action, "message": "", "params": params or {}}}
+        {actor: {"action": action, "messages": {}, "params": params or {}}}
     )
     return infos
 

@@ -8,7 +8,7 @@ one place, rather than being scattered across a build step and the runner.
 """
 
 from pathlib import Path
-from typing import Literal, get_args
+from typing import Annotated, Literal, get_args
 
 from pydantic import (
     BaseModel,
@@ -70,7 +70,6 @@ class GraphConfig(ConfigModel):
     edge_decay_steps: int | None = Field(default=None, ge=0, description="Expire inactive social connections after this many steps. Null disables expiry.")
     # Total social suggestions; about two thirds prefer outgoing two-hop neighbors.
     random_intro_k: int = Field(default=3, ge=0, description="Connection suggestions per step. About two thirds prefer outgoing two-hop neighbors.")
-    direct_message_cost: int = Field(default=0, ge=0, description="Energy cost per direct message.")
     allow_follow: bool = Field(default=True, description="Allow following other agents.")
     allow_connection: bool = Field(default=True, description="Allow mutual connection requests.")
     connection_request_lifespan: int = Field(default=3, ge=0, description="Steps before an unanswered connection request expires.")
@@ -323,7 +322,17 @@ class AgentConfig(ConfigModel):
         default=10, description="Max number of interactions stored per agent"
     )
     model: str = Field(
-        default="claude-haiku-4-5", description="Model name used for agent decisions"
+        default="claude-haiku-4-5", description="Default model used for agent decisions"
+    )
+    model_assignment: dict[
+        Annotated[str, Field(min_length=1)], Annotated[int, Field(strict=True, ge=0)]
+    ] = Field(
+        default_factory=dict,
+        description="Number of starting LLM agents per model. Remaining agents use agent.model. Set run.seed for reproducible assignment.",
+    )
+    inherited_model: bool = Field(
+        default=True,
+        description="Offspring inherit the spawning parent's model. If false, spawn requires a model from agent.model or the keys of agent.model_assignment.",
     )
     max_tokens: int | None = Field(
         gt=0,
@@ -335,10 +344,10 @@ class AgentConfig(ConfigModel):
     )
     reasoning_effort: str | None = Field(
         json_schema_extra={"enum": [*REASONING_EFFORTS, None]},
-        default=None,
+        default="low",
         description=(
             f"Reasoning effort, one of {REASONING_EFFORTS}. None keeps the "
-            "router's per-model default. For OpenAI reasoning models it sets "
+            "provider's own default. For OpenAI reasoning models it sets "
             "reasoning_effort; for Anthropic (Opus 4.6+/Sonnet 4.6) it enables "
             "adaptive thinking at this effort level via output_config.effort."
         ),
@@ -389,14 +398,6 @@ class AgentConfig(ConfigModel):
 class EnvConfig(ConfigModel):
     agent_lifespan: int = Field(default=100, description="Lifespan baseline. -1 gives unlimited life. Values above one vary by up to 20%; other values last one turn.")
     artifact_creation_cost: int = Field(ge=-1, default=0, description="Artifact creation cost. -1 disables creation, 0 is free, and positive values charge energy.")
-    use_library: bool = Field(
-        default=True,
-        description="Enable the shared artifact library/commons (social-graph world)",
-    )
-    library_preview: bool = Field(
-        default=True,
-        description="show_library_content includes a short content preview, not just names",
-    )
     allow_fixed_artifacts: bool = Field(
         default=True,
         description=(
@@ -455,7 +456,11 @@ class EnvConfig(ConfigModel):
     max_message_length: int = Field(
         ge=0,
         default=200,
-        description="Max token length for agent broadcast messages (0 = unlimited)",
+        description="Max token length of each message an agent sends (0 = unlimited)",
+    )
+    allow_broadcasts: bool = Field(
+        default=True,
+        description="Allow broadcast messages. When false, agents can send only private messages.",
     )
     min_agents: int = Field(ge=0, default=0, description="Minimum agent population")
     max_agents: int | None = Field(
@@ -611,6 +616,10 @@ class RunConfig(ConfigModel):
         default_factory=dict,
         description="Settings validated by the selected scenario or scenario runner",
     )
+    mechanics: dict[str, dict] = Field(
+        default_factory=dict,
+        description="Mechanics attached before the scenario's, keyed by module path, for example terralingua.mechanics.library, each with its options. A module exposes Options and build(options).",
+    )
     seed: int | None = Field(
         default=None,
         description="Seed for the world's random generator. Null leaves it unseeded.",
@@ -665,7 +674,7 @@ class RunConfig(ConfigModel):
     stop_on_external_solved: bool = Field(
         default=False,
         description="Stop the run as soon as an external server response signals task "
-        "completion (a truthy 'solved' or 'done'). Off by default; tasks that "
+        "completion (a truthy 'solved', 'done', or 'terminated'). Off by default; tasks that "
         "run to a fixed horizon leave it off.",
     )
     allow_human_agents: bool = Field(
@@ -677,14 +686,42 @@ class RunConfig(ConfigModel):
     # exp_name is intentionally left None when unset; SimulationRunner fills a
     # run_<timestamp>_<id> name in __init__.
 
+    @model_validator(mode="after")
+    def _scenario_once(self) -> "RunConfig":
+        if self.scenario and self.scenario in self.mechanics:
+            raise ValueError(
+                f"run.scenario names {self.scenario}, which run.mechanics already attaches"
+            )
+        return self
+
+    @property
+    def mechanic_modules(self) -> dict[str, dict]:
+        """Module path to options for every mechanic to attach: run.mechanics first,
+        then the scenario."""
+        modules = dict(self.mechanics)
+        if self.scenario:
+            modules[self.scenario] = self.scenario_options
+        return modules
+
 
 class ExperimentConfig(ConfigModel):
     agent: AgentConfig = Field(default_factory=AgentConfig)
     env: EnvConfig = Field(default_factory=EnvConfig)
     run: RunConfig = Field(default_factory=RunConfig)
 
+    def validate_model_assignment(self, starting_agents: int) -> None:
+        assigned = sum(self.agent.model_assignment.values())
+        if assigned > starting_agents:
+            raise ValueError(
+                f"agent.model_assignment requests {assigned} agents, "
+                f"but there are only {starting_agents} starting LLM agents."
+            )
+
     @model_validator(mode="after")
     def _validate_cross_config(self) -> "ExperimentConfig":
+        # Imported networks supply their own roster when the runner loads the file.
+        if not self.env.graph.agent_network_hocon_path:
+            self.validate_model_assignment(self.env.init_agents)
         prefix = self.agent.agents_name_prefix
         if (
             not self.env.graph.agent_network_hocon_path

@@ -30,7 +30,7 @@ class _StubEnv:
 
 
 def _ext_action(args, message=""):
-    return {"action": "world_step", "params": dict(args), "message": message}
+    return {"action": "world_step", "params": dict(args), "messages": {"broadcast": message} if message else {}}
 
 
 # ---- election ---------------------------------------------------------------
@@ -101,11 +101,11 @@ def test_unanimous_groups_by_slot_and_suppresses_losers():
     mgr = UnanimousVotingManager(rewards=DiasRewards(5.0, 0.2), vote_key="slot")
     actions = {
         "a0": _ext_action({"slot": 0, "action": "plant"}),
-        "a1": _ext_action({"slot": 0, "action": "plant"}),
+        "a1": _ext_action({"slot": 0, "action": "plant"}, "Still speaking"),
         "a2": _ext_action({"slot": 1, "action": "wait"}),
     }
     requests = {tag: dict(a["params"]) for tag, a in actions.items()}
-    no_op = {"action": "noop", "message": "", "params": {}}
+    no_op = {"action": "noop", "messages": {}, "params": {}}
     val = mgr.validate(actions, requests, no_op)
 
     assert mgr.active_topics() == {0, 1}
@@ -115,6 +115,7 @@ def test_unanimous_groups_by_slot_and_suppresses_losers():
     assert actions["a1"]["action"] == "noop"            # loser suppressed to no-op
     assert actions["a1"]["params"] == {}
     assert actions["a1"]["default_reason"] == "election_override"
+    assert actions["a1"]["messages"] == {"broadcast": "Still speaking"}
 
 
 def test_unanimous_settle_shares_reward():

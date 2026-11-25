@@ -33,8 +33,6 @@ import json
 import logging
 from typing import Dict, List
 
-import numpy as np
-
 from terralingua.environment.actions import (
     LocationAffordance,
     build_leave_role_action,
@@ -201,8 +199,6 @@ class RolesMixin:
         if not self._roles or self._initial_roles_assigned:
             return
         self._initial_roles_assigned = True
-        if self.rng is None:
-            self.rng = np.random.default_rng()
         agents = sorted(self.agent_registry)
         slots: List[str] = []
         for name in sorted(self._roles):

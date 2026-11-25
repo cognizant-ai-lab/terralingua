@@ -15,7 +15,7 @@ MAX_OUTPUT_TOKENS = output_table()
 
 
 
-_STAY_ACTION = {"action": "move", "message": "", "params": {"direction": "stay"}}
+_STAY_ACTION = {"action": "move", "messages": {}, "params": {"direction": "stay"}}
 
 
 async def async_select_with_retry(
@@ -34,13 +34,15 @@ async def async_select_with_retry(
 
     Returns the action dict only (no need_refresh flag).
     Inner parse-failure retries are handled inside agent.select_action_async().
+    When every attempt fails, the agent records the world's pass action for
+    this step, so its log file keeps one line per step.
     """
     original_history_len = agent.max_history
     stay_action = getattr(agent, "stay_action", None) or _STAY_ACTION
     try:
         for attempt in range(retries):
             try:
-                action = await agent.select_action_async(
+                return await agent.select_action_async(
                     obs=observation,
                     reward=reward,
                     info=info,
@@ -49,7 +51,6 @@ async def async_select_with_retry(
                     chat_params=llm_chat_params,
                     client=llm_client,
                 )
-                return action
             except BadRequestError as e:
                 print(
                     f"⚠️ Retry {attempt + 1}/{retries} {agent.agent_name}({agent.agent_tag}) Bad Request: {e}. Likely cause is too many tokens"
@@ -64,12 +65,17 @@ async def async_select_with_retry(
             except Exception as e:
                 print(f"❌ Unexpected failure {agent.agent_name}({agent.agent_tag}): {e}")
                 traceback.print_exc()
-                return {**stay_action, "source": "default", "default_reason": "unexpected_error"}
-
-        print(f"❌ Failed after {retries} retries {agent.agent_name}({agent.agent_tag}).")
-        return {**stay_action, "source": "default", "default_reason": "max_retries"}
+                default_reason = "unexpected_error"
+                break
+        else:
+            print(f"❌ Failed after {retries} retries {agent.agent_name}({agent.agent_tag}).")
+            default_reason = "max_retries"
     finally:
         agent.max_history = original_history_len
+    return agent.record_default_action(
+        observation, available_actions, info, ts,
+        {**stay_action, "source": "default", "default_reason": default_reason},
+    )
 
 
 def build_output_schema(action_description: dict) -> dict:

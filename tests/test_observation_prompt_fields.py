@@ -28,6 +28,7 @@ def _formatted(label="current", *, lifespan=9, inventory="private current artifa
         "inventory": inventory,
         "energy": 17,
         "time": lifespan,
+        "life_spent": round(100 * (20 - lifespan) / 20),
     }
 
 
@@ -62,8 +63,8 @@ def test_history_and_current_state_use_the_same_energy_visibility():
 
     assert "Energy: 17" in history
     assert "Energy: 17" in current
-    assert "Remaining lifespan (steps): 10" in history
-    assert "Remaining lifespan (steps): 9" in current
+    assert "Life lived: 50%" in history
+    assert "You have lived 55% of your lifespan." in current
     assert "Remaining time:" not in prompt
 
 
@@ -108,7 +109,7 @@ def test_artifact_content_labels_are_social_only_and_preserve_raw_data(template)
     assert info["custom_text"] in prompt
     if template == "social_graph.j2":
         assert prompt.count("Your public artifact contents:") == 2
-        assert prompt.count("Your private artifact contents:") == 2
+        assert prompt.count("Your private artifact contents:") == 1
         assert "Artifact guide\nContent: first line\nSecond line\n\nArtifact notes" in prompt
         assert PUBLIC_KEY not in prompt
         assert PRIVATE_KEY not in prompt
@@ -159,7 +160,7 @@ def test_action_parameters_and_reply_schema_are_unchanged():
     assert json.dumps(actions, indent=4) in prompt
     assert actions == original
     assert '"action": "<one of tool_call>"' in prompt
-    assert '"message":' in prompt
+    assert '"messages":' in prompt
     assert '"params": {"key": "value"}' in prompt
     assert '"internal_memory":' in prompt
     assert "my memory" in prompt
@@ -188,3 +189,11 @@ def test_receipts_are_hidden_unless_the_being_has_external_actions():
     agent.external_actions = True
     prompt = _render(agent, info={**receipts, "Clock": "Monday, 10:00, morning."})
     assert "execution_request" in prompt and "action_receipts" in prompt
+
+
+@pytest.mark.parametrize("lifespan,remaining,expected", [
+    (100, 75, 25), (20, 9, 55), (100, 105, 0), (100, -1, 100),
+    (float("inf"), float("inf"), None), (0, 0, None),
+])
+def test_life_lived_uses_original_lifespan_and_clamps_bounds(lifespan, remaining, expected):
+    assert AgentMixin.life_spent({"lifespan": lifespan, "time": remaining}) == expected

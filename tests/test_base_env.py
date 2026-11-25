@@ -205,7 +205,7 @@ class TestRestartEnv:
             lifespan=100,
         )
         env.step(
-            {"a0": {"action": "move", "params": {"direction": "stay"}, "message": "hi"}}
+            {"a0": {"action": "move", "params": {"direction": "stay"}, "messages": {"broadcast": "hi"}}}
         )
         obs, infos = env.restart_env(agent_poses={"a0": (5, 5)})
         assert env.step_count == 0
@@ -260,7 +260,7 @@ class TestStepBasic:
                 "a0": {
                     "action": "move",
                     "params": {"direction": "stay"},
-                    "message": "hello",
+                    "messages": {"broadcast": "hello"},
                 }
             }
         )
@@ -276,22 +276,22 @@ class TestStepBasic:
                 "a0": {
                     "action": "move",
                     "params": {"direction": "stay"},
-                    "message": long_msg,
+                    "messages": {"broadcast": long_msg},
                 }
             }
         )
         # raw message must have been truncated, and the sender told
         assert len(e.msg_raw["a0"]) < len(long_msg)
-        assert "5 tokens" in infos["a0"]["Message outcome"]
+        assert "5 tokens" in infos["a0"]["Message delivery"]
 
     def test_short_message_gets_no_message_outcome(self, tmp_log):
         e = make_env(tmp_log, max_message_length=5)
         e.add_agent("a0", "Alice", "text", position=(2, 2))
         e.restart_env(agent_poses={"a0": (2, 2)})
         *_, infos = e.step(
-            {"a0": {"action": "move", "params": {"direction": "stay"}, "message": "hi"}}
+            {"a0": {"action": "move", "params": {"direction": "stay"}, "messages": {"broadcast": "hi"}}}
         )
-        assert "Message outcome" not in infos["a0"]
+        assert "Message delivery" not in infos["a0"]
 
 
 # ---------------------------------------------------------------------------
@@ -723,6 +723,16 @@ class TestKill:
         assert "carried" in env.pos_artifacts[pos]
         assert env.artifacts["carried"].pose == pos
 
+    def test_an_evicted_orphans_inventory_falls_where_it_stood(self, env):
+        pos = env.agent_pos["a0"]
+        env.add_artifact(pos, "text", "carried", "x", "a0", lifespan=2, to_inventory="a0")
+        env.evict_orphan("a0")
+        assert "carried" in env.pos_artifacts[pos]
+        assert env.artifact_location["carried"] == ("map", pos)
+        for _ in range(3):
+            env.step({})
+        assert "carried" not in env.artifacts
+
 
 # ---------------------------------------------------------------------------
 # depart / _depart
@@ -980,3 +990,99 @@ class TestPersistence:
     def test_load_nonexistent_raises(self, env, tmp_path):
         with pytest.raises(AssertionError):
             env.load_state(tmp_path / "ghost.pkl")
+
+
+# ---------------------------------------------------------------------------
+# step — private messages
+# ---------------------------------------------------------------------------
+
+
+def stay_with(messages):
+    return {"action": "move", "params": {"direction": "stay"}, "messages": messages}
+
+
+def three_agent_env(tmp_log, **kwargs):
+    """Alice and Bob see each other; Carol is out of everyone's sight."""
+    e = make_env(tmp_log, **kwargs)
+    e.add_agent("a0", "Alice", "text", position=(2, 2))
+    e.add_agent("a1", "Bob", "text", position=(2, 3))
+    e.add_agent("a2", "Carol", "text", position=(8, 8))
+    e.restart_env(agent_poses={"a0": (2, 2), "a1": (2, 3), "a2": (8, 8)})
+    return e
+
+
+class TestPrivateMessages:
+    def test_private_message_reaches_only_the_named_being(self, tmp_log):
+        e = three_agent_env(tmp_log)
+        obs, _, _, _, infos = e.step({"a0": stay_with({"Bob": "psst"})})
+        assert obs["a1"]["incoming_dms"] == {"Alice": "psst"}
+        assert obs["a1"]["incoming_broadcasts"] == {}
+        assert obs["a0"]["incoming_dms"] == {}
+        assert obs["a2"]["incoming_dms"] == {}
+        assert e.msg_raw["a0"] == ""
+        assert e.private_chat == {0: ["Alice -> Bob: psst"]}
+        assert e.chat == {}
+        assert "Message delivery" not in infos["a0"]
+
+    def test_broadcast_and_private_message_travel_in_the_same_turn(self, tmp_log):
+        e = three_agent_env(tmp_log)
+        obs, *_ = e.step({"a0": stay_with({"broadcast": "hi all", "Bob": "psst"})})
+        assert obs["a1"]["incoming_broadcasts"] == {"Alice": "hi all"}
+        assert obs["a1"]["incoming_dms"] == {"Alice": "psst"}
+        assert e.chat == {0: ["Alice: hi all"]}
+
+    def test_private_messages_last_one_step(self, tmp_log):
+        e = three_agent_env(tmp_log)
+        e.step({"a0": stay_with({"Bob": "psst"})})
+        obs, *_ = e.step({"a0": stay_with({})})
+        assert obs["a1"]["incoming_dms"] == {}
+
+    def test_messages_are_delivered_even_when_the_action_is_unknown(self, tmp_log):
+        e = three_agent_env(tmp_log)
+        obs, _, _, _, infos = e.step({"a0": {"action": "fly", "params": {}, "messages": {"Bob": "psst"}}})
+        assert "Action error" in infos["a0"]
+        assert obs["a1"]["incoming_dms"] == {"Alice": "psst"}
+
+    def test_undelivered_messages_are_reported_with_the_reason(self, tmp_log):
+        e = three_agent_env(tmp_log)
+        obs, _, _, _, infos = e.step(
+            {"a0": stay_with({"Zed": "hello", "Alice": "note to self", "Carol": "far away"})}
+        )
+        notes = infos["a0"]["Message delivery"]
+        assert "no being named Zed" in notes
+        assert "yourself" in notes
+        assert "Carol is out of your perception range" in notes
+        assert obs["a2"]["incoming_dms"] == {}
+        assert e.private_chat == {}
+
+    def test_each_private_message_is_cut_at_the_token_limit(self, tmp_log):
+        e = three_agent_env(tmp_log, max_message_length=5)
+        long_msg = "a " * 200
+        obs, _, _, _, infos = e.step({"a0": stay_with({"Bob": long_msg})})
+        delivered = obs["a1"]["incoming_dms"]["Alice"]
+        assert len(delivered) < len(long_msg)
+        assert "Bob" in infos["a0"]["Message delivery"]
+        assert "5 tokens" in infos["a0"]["Message delivery"]
+
+    def test_values_that_are_not_text_are_delivered_as_text(self, tmp_log):
+        e = three_agent_env(tmp_log)
+        obs, *_ = e.step({"a0": stay_with({"Bob": 42})})
+        assert obs["a1"]["incoming_dms"] == {"Alice": "42"}
+
+    def test_disabled_broadcasts_are_dropped_and_reported(self, tmp_log):
+        e = three_agent_env(tmp_log, allow_broadcasts=False)
+        obs, _, _, _, infos = e.step({"a0": stay_with({"broadcast": "hi all", "Bob": "psst"})})
+        assert e.msg_raw["a0"] == ""
+        assert e.chat == {}
+        assert obs["a1"]["incoming_broadcasts"] == {}
+        assert obs["a1"]["incoming_dms"] == {"Alice": "psst"}
+        assert "Broadcasts are not possible" in infos["a0"]["Message delivery"]
+
+    def test_private_chat_survives_a_checkpoint(self, tmp_log):
+        e = three_agent_env(tmp_log)
+        e.step({"a0": stay_with({"Bob": "psst"})})
+        state = e.get_state_ckpt()
+        assert state["private_chat"] == {0: ["Alice -> Bob: psst"]}
+        other = three_agent_env(tmp_log / "other")
+        other.set_state_ckpt(state)
+        assert other.private_chat == {0: ["Alice -> Bob: psst"]}

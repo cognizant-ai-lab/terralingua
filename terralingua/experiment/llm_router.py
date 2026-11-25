@@ -24,6 +24,11 @@ MODEL_MAP = {
     "claude-opus-5-5": "claude-opus-5-5",
     "claude-opus-5.5": "claude-opus-5-5",
     "claude-sonnet-5": "claude-sonnet-5",
+    "claude-sonnet-5-5": "claude-sonnet-5-5",
+    "claude-sonnet-5.5": "claude-sonnet-5-5",
+    "gpt-6-luna": "gpt-6-luna",
+    "gpt-6.1-sol": "gpt-6.1-sol",
+    "gpt-6.1-terra": "gpt-6.1-terra",
 }
 
 
@@ -189,9 +194,6 @@ class LLMRouter:
             llm_chat_params = {"model": self.model_name}
             if self.provider == "openai":
                 llm_chat_params["response_format"] = {"type": "json_object"}
-                model_id = self.model_name.removeprefix("openai/")
-                if model_id in ("o3-mini", "gpt-5.1", "gpt-5-mini"):
-                    llm_chat_params["reasoning_effort"] = "low"
         else:
             raise ValueError(f"Unsupported model: {self.model_name}.")
         self._apply_overrides(llm_chat_params, self.provider)

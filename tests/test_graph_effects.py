@@ -161,7 +161,7 @@ def make_env(tmp_path, n_agents=4, cls=OpenGraphWorld, hocon_text=HOCON, **env_k
 
 def step_one(env, actor, action, params=None):
     _, _, _, _, infos = env.step(
-        {actor: {"action": action, "message": "", "params": params or {}}}
+        {actor: {"action": action, "messages": {}, "params": params or {}}}
     )
     return infos
 

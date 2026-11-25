@@ -25,7 +25,6 @@ BASE_KEYS = {
     "pos_artifacts",
     "artifacts",
     "agent_inventories",
-    "library",
     "artifact_location",
     "expired_artifacts",
     "_all_artifact_names",
@@ -35,11 +34,13 @@ BASE_KEYS = {
     "pos_to_agent",
     "agent_energy",
     "agent_time",
+    "agent_lifespan",
     "agent_spawn",
     "agent_names",
     "agent_colors",
     "msg_raw",
     "chat",
+    "private_chat",
     "agent_registry",
     "agent_excluded_actions",
     "step_count",
@@ -169,10 +170,10 @@ def test_social_roundtrip(tmp_path):
     env = _social_env(tmp_path / "a", n_agents=4)
     # Populate the social-specific state so a load that drops it is caught.
     env.step(
-        {"a0": {"action": "follow", "message": "", "params": {"target": "Carol", "replace": ""}}}
+        {"a0": {"action": "follow", "messages": {}, "params": {"target": "Carol", "replace": ""}}}
     )
     env.step(
-        {"a0": {"action": "request_connection", "message": "", "params": {"target": "Dave", "replace": ""}}}
+        {"a0": {"action": "request_connection", "messages": {}, "params": {"target": "Dave", "replace": ""}}}
     )
     assert env._pending_outgoing and env._edge_last_active  # sanity: non-empty
     _assert_roundtrip(env, _social_env(tmp_path / "b", n_agents=1))

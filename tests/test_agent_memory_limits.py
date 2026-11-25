@@ -16,7 +16,7 @@ from terralingua.genome.no_traits import Genome
 
 OBS = {"observation_text": "current scene", "incoming_broadcasts": {},
        "inventory": [], "energy": 50, "time": 100}
-ACTION = {"action": "noop", "params": {}, "message": ""}
+ACTION = {"action": "noop", "params": {}, "messages": {}}
 ACTIONS = {"noop": {"description": "Wait", "params": {}}}
 
 
@@ -91,7 +91,7 @@ def test_human_generated_summary_obeys_configured_cap(tmp_path, monkeypatch, lim
     owner = agent("human", limit, tmp_path)
     monkeypatch.setattr(owner, "_prompt_for_action", lambda *_: "noop")
     monkeypatch.setattr(owner, "_prompt_for_params", lambda *_: {})
-    monkeypatch.setattr(owner, "_prompt_for_message", lambda: "")
+    monkeypatch.setattr(owner, "_prompt_for_messages", lambda: {})
     owner._select_action(OBS, ACTIONS, 0, {}, 0)
     assert len(owner.internal_memory_encoder.encode(owner.internal_memory)) <= limit
     assert bool(owner.internal_memory) is (limit > 0)

@@ -168,7 +168,7 @@ class UnanimousVotingManager(VotingManager):
             original = actions.get(tag, {})
             actions[tag] = {
                 **no_op_action,
-                "message": original.get("message", ""),
+                "messages": original.get("messages", {}),
                 "source": "default",
                 "default_reason": "election_override",
             }

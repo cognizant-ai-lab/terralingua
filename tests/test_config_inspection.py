@@ -51,9 +51,9 @@ def test_contract_choices_and_fingerprint_are_complete_and_stable():
     ({"world_type": "social_graph"}, "env.graph.hop_radius", False),
     ({"world_type": "graph", "graph.topology": "tree"}, "env.graph.small_world_p", False),
     ({"world_type": "graph", "graph.topology": "small_world"}, "env.graph.small_world_p", True),
-    ({"world_type": "social_graph", "artifact_creation_cost": -1, "use_inventory": False}, "env.library_preview", True),
-    ({"world_type": "social_graph", "inert_artifacts": True}, "env.library_preview", False),
-    ({"world_type": "social_graph", "inert_artifacts": True}, "env.use_library", True),
+    ({"reproduction_cost": -1}, "agent.inherited_model", False),
+    ({"reproduction_cost": 0}, "agent.inherited_model", True),
+    ({"world_type": "social_graph"}, "env.allow_broadcasts", True),
     ({"artifact_creation_cost": -1}, "env.allow_fixed_artifacts", False),
     ({"artifact_creation_cost": 0}, "env.allow_fixed_artifacts", True),
 ])
@@ -256,7 +256,7 @@ def test_cli_lists_artifact_types_with_their_parameters():
     types = {t["name"]: t for t in result["artifact_types"]}
     assert types["text"]["creatable"] is True
     assert types["text"]["params"] == ["max_tokens"]
-    assert all(set(t) == {"name", "description", "creatable", "params"} for t in types.values())
+    assert all(set(t) == {"name", "type_description", "payload_description", "creatable", "params"} for t in types.values())
     code, result = run_config_command("artifact-types", "--preset", "example")
     assert code == 0
     assert "shelter" in {t["name"] for t in result["artifact_types"]}

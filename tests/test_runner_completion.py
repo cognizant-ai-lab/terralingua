@@ -1,6 +1,7 @@
 """Exercise completion accounting through the real asynchronous runner loop."""
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -41,7 +42,7 @@ def make_runner(tmp_path, *, fail_on=None, max_steps=2):
     runner.dashboard_manager = None
     runner.terminate = False
     runner.env = StubEnvironment(fail_on)
-    runner.agents = {"a": SimpleNamespace()}
+    runner.agents = {"a": SimpleNamespace(log_turn=lambda ts: None)}
     runner.obs = {"a": {"time": 0}}
     runner.infos = {"a": {}}
     runner.rewards = {"a": 0}
@@ -125,3 +126,30 @@ def test_maintenance_failure_does_not_rewind_the_committed_world_step(tmp_path):
     assert status["simulation"]["completed_steps"] == runner.env.committed == 1
     assert runner.teardown_states[0]["next_step"] == 41
     assert runner.env.attempted == 1
+
+
+@pytest.mark.parametrize("signal", ["solved", "done", "terminated"])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_external_completion_stops_only_when_enabled(tmp_path, signal, enabled):
+    runner = make_runner(tmp_path)
+    runner.params.run.stop_on_external_solved = enabled
+
+    def receive_completion(*args):
+        runner.obs["a"]["external_response"] = [json.dumps({signal: True})]
+
+    runner._process_external_poststep = receive_completion
+    asyncio.run(runner.run_async())
+    status = runner.run_status.read()
+    assert runner.env.committed == (1 if enabled else 2)
+    assert status["simulation"]["reason"] == ("external_solved" if enabled else "step_budget")
+    assert status["simulation"]["status"] == "complete"
+
+
+@pytest.mark.parametrize("response", [
+    '{"terminated": false}', '{"error": "temporary failure"}',
+    '{"snapshot": {"terminated": true}}', 'invalid JSON', '[]',
+])
+def test_external_completion_ignores_other_responses(tmp_path, response):
+    runner = make_runner(tmp_path)
+    runner.obs["a"]["external_response"] = [response]
+    assert not runner._external_task_solved()

@@ -30,6 +30,7 @@ class HumanAgent(AgentMixin):
         food_mechanism: bool = True,
         verbose: int = 1,
         internal_memory_size: int = 500,
+        allow_broadcasts: bool = True,
     ):
         self.agent_name = agent_name
         self.agent_tag = agent_tag
@@ -39,8 +40,9 @@ class HumanAgent(AgentMixin):
         self.artifact_creation = artifact_creation
         self.food_mechanism = food_mechanism
         self.verbose = verbose
+        self.allow_broadcasts = allow_broadcasts
 
-        self.history: List[Tuple[dict, str, str, dict, dict | None]] = []
+        self.history: List[Tuple[dict, str, Dict[str, str], dict, dict | None]] = []
         self.internal_memory: str = ""
         self.max_history = max_history
 
@@ -68,28 +70,24 @@ class HumanAgent(AgentMixin):
 
         action_key = self._prompt_for_action(formatted_obs, available_actions)
         params = self._prompt_for_params(action_key, available_actions)
-        message = self._prompt_for_message()
+        messages = self._prompt_for_messages()
 
         if self.use_internal_memory:
             self.internal_memory = self.validate_internal_memory(
                 self._update_memory(formatted_obs, action_key, params)
             )
 
-        self.history.append((formatted_obs, action_key, message, params, info))
+        self.history.append((formatted_obs, action_key, messages, params, info))
         self.history = self.history[-self.max_history :] if self.max_history > 0 else []
 
-        action_obj = {"action": action_key, "message": message, "params": params}
+        action_obj = {"action": action_key, "messages": messages, "params": params}
 
-        self.logger.log(
-            agent_name=self.agent_name,
-            agent_tag=self.agent_tag,
-            available_actions=available_actions,
-            observation=obs,
-            action=action_obj,
-            internal_memory=self.internal_memory,
-            time=str(time),
-            input_prompt="N/A (human input)",
-        )
+        self.turn_record = {
+            "available_actions": available_actions,
+            "observation": obs,
+            "action": action_obj,
+            "input_prompt": "N/A (human input)",
+        }
         if self.verbose >= 2:
             print(f"[MockAgent:{self.agent_name}] chose {action_obj}")
         return action_obj
@@ -118,7 +116,7 @@ class HumanAgent(AgentMixin):
             max_attempts=max_attempts,
         )
 
-    def _format_observation(self, obs: dict, infos: dict | None) -> dict:
+    def _format_observation(self, obs: dict, infos: dict | None = None) -> dict:
         formatted = {}
         vision = obs.get("observation", {})
         formatted["observation"] = vision
@@ -128,6 +126,8 @@ class HumanAgent(AgentMixin):
         formatted["inventory"] = obs.get("inventory", [])
         formatted["energy"] = obs.get("energy")
         formatted["time"] = obs.get("time")
+        formatted["life_spent"] = self.life_spent(obs) if "time" in obs else None
+        formatted["step"] = obs.get("step")
         if "external_response" in obs:
             formatted["external_response"] = obs["external_response"]
         if infos:
@@ -137,10 +137,12 @@ class HumanAgent(AgentMixin):
     def _prompt_for_action(self, formatted_obs: dict, available_actions: dict) -> str:
         print("\n=== Manual Action Selection ===")
         print(f"Agent: {self.agent_name}  Tag: {self.agent_tag}")
+        if formatted_obs.get("step") is not None:
+            print(f"Step: {formatted_obs['step']}")
         if np.isfinite(formatted_obs["energy"]):
             print(f"Energy: {formatted_obs['energy']}")
-        if np.isfinite(formatted_obs["time"]):
-            print(f"Remaining lifespan (steps): {formatted_obs['time']}")
+        if formatted_obs.get("life_spent") is not None:
+            print(f"Life lived: {formatted_obs['life_spent']}%")
         inv = formatted_obs.get("inventory") or []
         if isinstance(inv, list):
             print(f"Inventory: {inv if inv else '<empty>'}")
@@ -156,11 +158,11 @@ class HumanAgent(AgentMixin):
         if "direct_messages" in formatted_obs:
             dms = formatted_obs.get("direct_messages", {})
             if dms:
-                print("Direct messages:")
+                print("Private messages:")
                 for s, m in dms.items():
                     print(f"  {s}: {m}")
             else:
-                print("Direct messages: <none>")
+                print("Private messages: <none>")
         print("Raw observation (relative cells):")
         vision = formatted_obs.get("observation", {})
         for coords, contents in vision.items():
@@ -227,9 +229,20 @@ class HumanAgent(AgentMixin):
             params[k] = val
         return params
 
-    def _prompt_for_message(self) -> str:
-        val = input("Broadcast message (blank for none) > ").strip()
-        return val
+    def _prompt_for_messages(self) -> Dict[str, str]:
+        messages = {}
+        if self.allow_broadcasts:
+            text = input("Broadcast (blank for none) > ").strip()
+            if text:
+                messages["broadcast"] = text
+        while True:
+            line = input("Private message as 'Name: text' (blank to finish) > ").strip()
+            if not line:
+                break
+            name, sep, text = line.partition(":")
+            if sep and name.strip() and text.strip():
+                messages[name.strip()] = text.strip()
+        return messages
 
     def _update_memory(self, formatted_obs: dict, action_key: str, params: dict) -> str:
         recent_msgs = list(formatted_obs.get("message", {}).keys())
@@ -257,6 +270,7 @@ class HumanAgent(AgentMixin):
             "use_inventory": self.use_inventory,
             "artifact_creation": self.artifact_creation,
             "food_mechanism": self.food_mechanism,
+            "allow_broadcasts": self.allow_broadcasts,
             "genome": self.genome.as_dict(),
             "genome_class": f"{self.genome.__class__.__module__}:{self.genome.__class__.__name__}",
             "max_history": self.max_history,
@@ -273,6 +287,7 @@ class HumanAgent(AgentMixin):
         self.use_inventory = state_ckpt["use_inventory"]
         self.artifact_creation = state_ckpt["artifact_creation"]
         self.food_mechanism = state_ckpt["food_mechanism"]
+        self.allow_broadcasts = state_ckpt.get("allow_broadcasts", self.allow_broadcasts)
         self.max_history = state_ckpt["max_history"]
         self.verbose = state_ckpt["verbose"]
         self.internal_memory_size = state_ckpt.get("internal_memory_size", self.internal_memory_size)

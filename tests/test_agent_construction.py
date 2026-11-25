@@ -77,6 +77,28 @@ class TestLLMAgentCheckpoint:
         # The actual rendered prompt should also be restored (it was saved in the ckpt).
         assert "network of other agents" in restored.system_prompt
 
+    def test_checkpoint_preserves_model_and_tool_definitions(self, tmp_path):
+        agent = LLMAgent(
+            agent_name="Alice", agent_tag="a0", log_dir=tmp_path,
+            genome=NoTraitsGenome(), model="gpt-6-luna",
+        )
+        agent.mcp_tool_definitions = {"world_query": {"input_schema": {"type": "object"}}}
+        restored = LLMAgent(
+            agent_name="Bob", agent_tag="b0", log_dir=tmp_path,
+            genome=NoTraitsGenome(), model="gpt-6.1-terra",
+        )
+        saved = agent.get_state_ckpt()
+        restored.set_state_ckpt(saved)
+        assert restored.model == "gpt-6-luna"
+        assert restored.mcp_tool_definitions == agent.mcp_tool_definitions
+        assert "world_query" in restored._system_prompt_with_tools()
+
+        del saved["model"]
+        del saved["mcp_tool_definitions"]
+        restored.set_state_ckpt(saved)
+        assert restored.model == "gpt-6-luna"
+        assert restored.mcp_tool_definitions == {}
+
     def test_solo_flag_drops_social_prompt_and_survives_checkpoint(
         self, tmp_path
     ):
@@ -126,14 +148,14 @@ class TestLLMAgentCheckpoint:
             }
         }
         _, _, params, _, _ = agent._parse_response(
-            '{"action": "deposit", "message": "", '
+            '{"action": "deposit", "messages": {}, '
             '"params": {"claim": "it pays"}}',
             available_actions=actions,
         )
         assert params == {"claim": "it pays", "evidence": "", "status": ""}
         with pytest.raises(ValueError, match="MISSING"):
             agent._parse_response(
-                '{"action": "deposit", "message": "", "params": {}}',
+                '{"action": "deposit", "messages": {}, "params": {}}',
                 available_actions=actions,
             )
 
@@ -146,13 +168,61 @@ class TestLLMAgentCheckpoint:
             genome=NoTraitsGenome(),
             solo=True,
         )
-        act, message, params, _, _ = agent._parse_response(
+        act, messages, params, _, _ = agent._parse_response(
             '{"action": "noop", "params": {}}',
             available_actions={"noop": {"params": {}}},
         )
         assert act == "noop"
-        assert message == ""
+        assert messages == {}
         assert params == {}
+
+    def test_parse_response_reads_messages_by_receiver(self, tmp_path):
+        agent = LLMAgent(
+            agent_name="Alice",
+            agent_tag="a0",
+            log_dir=tmp_path,
+            system_prompt_template="grid.j2",
+            genome=NoTraitsGenome(),
+        )
+        actions = {"move": {"params": {"direction": ""}}}
+        _, messages, _, _, _ = agent._parse_response(
+            '{"action": "move", "messages": {"broadcast": "hi all", "Bob": 42}, '
+            '"params": {"direction": "stay"}}',
+            available_actions=actions,
+        )
+        assert messages == {"broadcast": "hi all", "Bob": "42"}
+        _, messages, _, _, _ = agent._parse_response(
+            '{"action": "move", "messages": null, "params": {"direction": "stay"}}',
+            available_actions=actions,
+        )
+        assert messages == {}
+        with pytest.raises(ValueError, match="messages"):
+            agent._parse_response(
+                '{"action": "move", "messages": "hi all", "params": {"direction": "stay"}}',
+                available_actions=actions,
+            )
+
+    @pytest.mark.parametrize("template", ["grid.j2", "graph.j2", "social_graph.j2"])
+    @pytest.mark.parametrize("allow_broadcasts", [True, False])
+    def test_system_prompt_renders_for_both_broadcast_settings(self, tmp_path, template, allow_broadcasts):
+        agent = LLMAgent(
+            agent_name="Alice",
+            agent_tag="a0",
+            log_dir=tmp_path,
+            system_prompt_template=template,
+            genome=NoTraitsGenome(),
+            allow_broadcasts=allow_broadcasts,
+        )
+        assert agent.system_prompt.strip()
+        restored = LLMAgent(
+            agent_name="Bob",
+            agent_tag="b0",
+            log_dir=tmp_path,
+            system_prompt_template=template,
+            genome=NoTraitsGenome(),
+        )
+        restored.set_state_ckpt(agent.get_state_ckpt())
+        assert restored.allow_broadcasts is allow_broadcasts
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +354,7 @@ class _FlakyClient:
             return Response(content=None, input_tokens=1, output_tokens=0)
         return Response(
             content=_json.dumps(
-                {"action": "wait", "message": "", "params": {}}
+                {"action": "wait", "messages": {}, "params": {}}
             ),
             input_tokens=1,
             output_tokens=1,
@@ -322,3 +392,14 @@ def test_empty_llm_reply_is_retried_not_fatal(tmp_path):
     assert client.calls == 2
     assert action["action"] == "wait"
     assert action["source"] == "llm"
+
+
+def test_scenario_instructions_receive_run_context(tmp_path):
+    instructions = tmp_path / "instructions.md"
+    instructions.write_text("{{ init_agents }} beings; horizon {{ max_ts }}; mode {{ scenario_options.mode }}")
+    agent = LLMAgent(
+        agent_name="Alice", agent_tag="a0", log_dir=tmp_path,
+        genome=NoTraitsGenome(), scenario_specific_instructions=str(instructions),
+        init_agents=3, max_ts=40, scenario_options={"mode": "cooperative"},
+    )
+    assert "3 beings; horizon 40; mode cooperative" in agent.system_prompt

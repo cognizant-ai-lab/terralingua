@@ -85,7 +85,7 @@ class ExecutionReceiptsMixin:
 
     def _record_local_action_receipts(self, actions, external_state, ts):
         for tag, request in getattr(self, "_action_requests", {}).items():
-            if tag in external_state.tools:
+            if tag in external_state.requests:
                 continue
             info = self.infos.get(tag, {})
             result = {
@@ -179,9 +179,11 @@ class ExecutionReceiptsMixin:
             if tag in aligned:
                 continue
             request = getattr(self, "_action_requests", {}).get(tag, {"step": ts, "params": params})
+            error = state.rejected.get(tag)
             self._publish_action_receipt(tag, request, response_step=ts,
-                                         operation_status="overridden", effect_status="not_observed",
-                                         note="This proposal was not sent to the world.")
+                                         operation_status="rejected" if error else "overridden",
+                                         effect_status="not_observed",
+                                         note=error or "This proposal was not sent to the world.")
 
     def _settle_deferred_reward(self, envelope, records):
         """Pay a correlated completion to its original vote, once.

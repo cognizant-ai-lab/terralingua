@@ -52,9 +52,9 @@ def local_ports(monkeypatch, models):
 
 
 @pytest.mark.parametrize("agent_model,helper_model,wire_model,cap,effort", [
-    ("claude-opus-5-5", "gpt-5-mini", "gpt-5-mini", None, "low"),
+    ("claude-opus-5-5", "gpt-5-mini", "gpt-5-mini", None, None),
     ("gpt-5-mini", "claude-haiku-4-5", "anthropic/claude-haiku-4-5", 20000, None),
-    ("gpt-5-mini", "gpt-5-mini", "gpt-5-mini", None, "low"),
+    ("gpt-5-mini", "gpt-5-mini", "gpt-5-mini", None, None),
 ])
 def test_explicit_helper_owns_provider_and_defaults(sent, agent_model, helper_model,
                                                     wire_model, cap, effort):

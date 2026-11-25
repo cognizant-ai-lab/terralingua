@@ -5,7 +5,10 @@ import copy
 import pytest
 
 from tests.test_social_graph_env import (
-    follow, grant_manager_powers, make_social_env, seed_n_agents,
+    follow,
+    grant_manager_powers,
+    make_social_env,
+    seed_n_agents,
 )
 
 
@@ -31,7 +34,7 @@ def set_mandate(env, **extra):
         "motivation": "Concentrate on the current task.", **extra,
     }
     env._get_avail_actions("a0")
-    return env.step({"a0": {"action": "set_role", "params": params, "message": ""}})[-1]
+    return env.step({"a0": {"action": "set_role", "params": params, "messages": {}}})[-1]
 
 
 @pytest.mark.parametrize("persistent", [False, True])

@@ -158,6 +158,9 @@ def test_runner_seeds_hocon_identity_and_personality(
             "world_type": world_type,
             "exp_name": "network_test",
             "genome": "sentence_directed",
+            "model": "gpt-6-luna",
+            "model_assignment": {"gpt-6.1-terra": 2},
+            "init_agents": 1,  # The file supplies three founders.
             "scenario_specific_instructions": "none",
             "init_food": 0,
             "food_mechanism": False,
@@ -171,6 +174,9 @@ def test_runner_seeds_hocon_identity_and_personality(
     try:
         assert type(runner.env) is world_class
         assert set(runner.agents) == {"coordinator", "scout", "archivist"}
+        assert sorted(agent.model for agent in runner.agents.values()) == [
+            "gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-terra",
+        ]
         expected = {
             "coordinator": (
                 "Team Coordinator",

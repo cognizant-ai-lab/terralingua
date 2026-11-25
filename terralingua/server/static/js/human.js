@@ -54,15 +54,35 @@ function collectParamValues(card, actionName){
   return params;
 }
 
+function incomingMessages(payload){
+  const raw = payload.observation_raw || {};
+  const entries = [];
+  for(const [s,t] of Object.entries(raw.incoming_broadcasts || {})) entries.push([`${s} (broadcast)`, t]);
+  for(const [s,t] of Object.entries(raw.incoming_dms || {})) entries.push([`${s} (private)`, t]);
+  return entries;
+}
+
+function collectMessages(card){
+  const messages = {};
+  const broadcast = card.querySelector(".human-card-message").value.trim();
+  if(broadcast) messages.broadcast = broadcast;
+  for(const line of card.querySelector(".human-card-private").value.split("\n")){
+    const i = line.indexOf(":");
+    if(i <= 0) continue;
+    const name = line.slice(0, i).trim(), text = line.slice(i + 1).trim();
+    if(name && text) messages[name] = text;
+  }
+  return messages;
+}
+
 function buildHumanCard(tag, payload, ws){
   const card = document.createElement("div");
   card.className = "human-card";
   card.dataset.tag = tag;
-  const messages = (payload.observation_raw || {}).message || {};
+  const msgEntries = incomingMessages(payload);
   const availableActions = payload.available_actions || {};
   const step = payload.step ?? "?";
 
-  const msgEntries = Object.entries(messages);
   let msgsHtml = "";
   if(msgEntries.length){
     msgsHtml = `<div class="human-card-msgs">${
@@ -78,7 +98,8 @@ function buildHumanCard(tag, payload, ws){
       <span class="human-card-step">step ${step}</span>
     </div>
     <div class="human-card-params"></div>
-    <input class="human-card-message" type="text" placeholder="Message (optional)…" autocomplete="one-time-code" style="margin-top:0.35rem;" />
+    <input class="human-card-message" type="text" placeholder="Broadcast (optional)…" autocomplete="one-time-code" style="margin-top:0.35rem;" />
+    <textarea class="human-card-private" rows="2" placeholder="Private messages, one per line: Name: text" style="margin-top:0.35rem;"></textarea>
     <button class="human-card-submit" type="button">Submit</button>
   `;
 
@@ -107,8 +128,7 @@ function buildHumanCard(tag, payload, ws){
       if(nameInput){ nameInput.style.outline="2px solid red"; nameInput.focus(); }
       return;
     }
-    const message = card.querySelector(".human-card-message").value.trim();
-    ws.send(JSON.stringify({action:an, params, message}));
+    ws.send(JSON.stringify({action:an, params, messages: collectMessages(card)}));
     humanWaiting.set(tag, humanPendingPrompts.get(tag));
     humanPendingPrompts.delete(tag);
     card.classList.add("human-card--waiting");
@@ -122,7 +142,7 @@ function buildHumanCard(tag, payload, ws){
 }
 
 export function updateHumanCardObs(card, payload){
-  const messages = (payload.observation_raw || {}).message || {};
+  const msgEntries = incomingMessages(payload);
   const stepEl = card.querySelector(".human-card-step");
   if(stepEl) stepEl.textContent = `step ${payload.step ?? "?"}`;
   const availableActions = payload.available_actions || {};
@@ -130,7 +150,6 @@ export function updateHumanCardObs(card, payload){
 
   // Update messages
   const oldMsgs = card.querySelector(".human-card-msgs");
-  const msgEntries = Object.entries(messages);
   const selectEl = card.querySelector(".human-card-action-select");
   if(msgEntries.length){
     const html = `<div class="human-card-msgs">${msgEntries.map(([s,t])=>`<div class="human-card-msg"><b>${escHtml(s)}:</b> ${escHtml(t)}</div>`).join("")}</div>`;
@@ -172,11 +191,10 @@ export function updateHumanCardObs(card, payload){
       submitBtn.onclick = () => {
         const an = selectEl.value;
         const params = collectParamValues(card, an);
-        const message = card.querySelector(".human-card-message").value.trim();
         const tag = card.dataset.tag;
         const pending = humanPendingPrompts.get(tag);
         if(!pending) return;
-        pending.ws.send(JSON.stringify({action:an, params, message}));
+        pending.ws.send(JSON.stringify({action:an, params, messages: collectMessages(card)}));
         humanWaiting.set(tag, pending);
         humanPendingPrompts.delete(tag);
         card.classList.add("human-card--waiting");

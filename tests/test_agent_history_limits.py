@@ -1,6 +1,7 @@
 """Offline checks for bounded history and temporary retry settings."""
 
 import asyncio
+import copy
 import json
 from types import SimpleNamespace
 
@@ -17,7 +18,7 @@ from terralingua.utils.llm_utils import async_select_with_retry
 OBS = {"observation_text": "current scene", "incoming_broadcasts": {},
        "inventory": [], "energy": 50, "time": 100}
 ACTIONS = {"noop": {"description": "Wait", "params": {}}}
-ACTION = {"action": "noop", "params": {}, "message": ""}
+ACTION = {"action": "noop", "params": {}, "messages": {}}
 
 
 def make_agent(kind, limit):
@@ -39,7 +40,7 @@ def test_history_storage_is_bounded_for_every_recording_path(kind, limit, monkey
     if kind == "human":
         monkeypatch.setattr(agent, "_prompt_for_action", lambda *_: "noop")
         monkeypatch.setattr(agent, "_prompt_for_params", lambda *_: {})
-        monkeypatch.setattr(agent, "_prompt_for_message", lambda: "")
+        monkeypatch.setattr(agent, "_prompt_for_messages", lambda: {})
 
     async def respond(**_):
         content = "invalid response" if kind == "fallback" else json.dumps(ACTION)
@@ -71,6 +72,52 @@ def test_zero_history_does_not_render_restored_entries():
     assert "current scene" in prompt
 
 
+@pytest.mark.parametrize("template", ["grid.j2", "social_graph.j2"])
+def test_history_keeps_inventory_names_and_events_without_passive_contents(template):
+    agent = make_agent("llm", 2)
+    agent.system_prompt_template = template
+    inventory = ["A(text,movable): route notes", "A(text,movable): budget notes"]
+    past = agent._format_observation({**OBS, "inventory": inventory, "step": 5})
+    past_info = {
+        "Artifacts in your inventory": [
+            "PAST_ROUTE_CONTENTS",
+            'Budget notes before: {"field":"/balance","value":10000}',
+        ] * 3,
+        "Events": [{"event": "budget warning", "observed": 9000}],
+        "Action outcome": "PAST_ACTION_RESULT",
+        "Artifacts here": ["PUBLIC_ARTIFACT_CONTENTS"],
+    }
+    agent.history = [(past, "noop", {}, {}, past_info)]
+    saved_history = copy.deepcopy(agent.history)
+    current_info = {
+        "Artifacts in your inventory": [
+            "CURRENT_ROUTE_CONTENTS",
+            'Budget notes now: {"field":"/balance","value":10000}',
+        ],
+        "Events": [{"event": "budget warning", "observed": 8000}],
+    }
+    saved_current = copy.deepcopy(current_info)
+
+    prompt = agent._make_prompt(
+        agent._format_observation({**OBS, "inventory": inventory, "step": 6}),
+        ACTIONS, "", current_info,
+    )
+    history, current = prompt.split("=== Current State ===", 1)
+
+    for name in inventory:
+        assert name in history
+    for contents in past_info["Artifacts in your inventory"]:
+        assert contents not in history
+    assert "'observed': 9000" in history
+    assert "PAST_ACTION_RESULT" in history
+    assert "PUBLIC_ARTIFACT_CONTENTS" in history
+    for contents in current_info["Artifacts in your inventory"]:
+        assert contents in current
+    assert "'observed': 8000" in current
+    assert agent.history == saved_history
+    assert current_info == saved_current
+
+
 def bad_request():
     return BadRequestError(
         "context too long", response=httpx.Response(400, request=httpx.Request("POST", "https://invalid.test")),
@@ -82,7 +129,8 @@ def bad_request():
 @pytest.mark.parametrize("succeed", [False, True])
 def test_retry_history_never_becomes_negative_and_is_restored(initial, succeed):
     seen = []
-    agent = SimpleNamespace(max_history=initial, agent_name="Alice", agent_tag="a")
+    agent = SimpleNamespace(max_history=initial, agent_name="Alice", agent_tag="a",
+                            record_default_action=lambda *args: args[-1])
 
     async def select(**_):
         seen.append(agent.max_history)
@@ -129,7 +177,8 @@ def test_retry_restores_history_when_timeout_cancels_the_turn():
 @pytest.mark.parametrize("social", [False, True])
 @pytest.mark.parametrize("failure", ["max_retries", "unexpected_error"])
 def test_retry_failure_uses_world_pass_action(social, failure):
-    agent = SimpleNamespace(max_history=1, agent_name="Alice", agent_tag="a")
+    agent = SimpleNamespace(max_history=1, agent_name="Alice", agent_tag="a",
+                            record_default_action=lambda *args: args[-1])
     if social:
         agent.stay_action = ACTION
 
@@ -144,3 +193,26 @@ def test_retry_failure_uses_world_pass_action(social, failure):
     assert result["params"] == ({} if social else {"direction": "stay"})
     assert result["default_reason"] == failure
     assert agent.max_history == 1
+
+
+@pytest.mark.parametrize("failure", ["max_retries", "unexpected_error"])
+def test_retry_failure_keeps_a_turn_for_the_agent_log(failure):
+    records = []
+    agent = make_agent("llm", 2)
+    agent.logger = SimpleNamespace(save_genome=lambda **_: None, log=lambda **record: records.append(record))
+
+    async def select(**_):
+        if failure == "max_retries":
+            raise bad_request()
+        raise ValueError("invalid client response")
+
+    agent.select_action_async = select
+    result = asyncio.run(async_select_with_retry(agent, OBS, ACTIONS, 0, {}, 7, None, {}, retries=1))
+    assert result["default_reason"] == failure
+    assert len(agent.history) == 1
+    assert records == []
+    agent.log_turn(9)
+    assert [r["time"] for r in records] == ["9"]
+    assert records[0]["action"] is result
+    agent.log_turn(10)
+    assert len(records) == 1

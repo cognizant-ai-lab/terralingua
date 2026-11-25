@@ -49,6 +49,7 @@ class LLMAgent(AgentMixin):
         scenario_specific_instructions: str = "base",
         internal_memory_size: int = 500,
         max_message_length: int = 200,
+        allow_broadcasts: bool = True,
         stay_action: dict | None = None,
         server_instructions: str = "",
         solo: bool = False,
@@ -57,11 +58,16 @@ class LLMAgent(AgentMixin):
         max_connections: int | None = None,
         finite_energy: bool = True,
         finite_lifespan: bool = True,
+        max_ts: int = -1,
+        init_agents: int = -1,
+        scenario_options: dict | None = None,
+        model: str = "o4-mini",
     ):
         self.verbose = verbose
         logging.getLogger(__name__).setLevel(logger_level(verbose))
         self.agent_name = agent_name
         self.agent_tag = agent_tag
+        self.model = model
         self.internal_memory_size = internal_memory_size
         self.use_inventory = use_inventory
         self.artifact_creation = artifact_creation
@@ -71,12 +77,15 @@ class LLMAgent(AgentMixin):
         self.energy_death = (food_mechanism or self.energy_upkeep > 0) if energy_death is None else energy_death
         self.finite_energy = finite_energy
         self.finite_lifespan = finite_lifespan
+        self.max_ts = max_ts
+        self.init_agents = init_agents
+        self.scenario_options = scenario_options or {}
         # World's canonical pass-the-turn action, supplied by the env (social_graph
         # -> `noop`, grid/graph -> `move(direction=stay)`). Used as the parse-
         # failure fallback so it is always a valid action for the world type.
         self.stay_action = stay_action or {
             "action": "move",
-            "message": "",
+            "messages": {},
             "params": {"direction": "stay"},
         }
         self.external_actions = external_actions
@@ -84,8 +93,10 @@ class LLMAgent(AgentMixin):
         # shown to the LLM (e.g. a "difficulty" field); the runner keeps the
         # full response for logging. Sourced from servers.json `hidden_keys`.
         self.hidden_external_keys = list(hidden_external_keys or [])
+        self.names_by_tag: dict = {}
         self.scenario_specific_instructions = scenario_specific_instructions
         self.max_message_length = max_message_length
+        self.allow_broadcasts = allow_broadcasts
         self.spawn_allowed = spawn_allowed
         self.max_connections = max_connections
         # Instructions the connected MCP servers sent at connection time.
@@ -98,6 +109,7 @@ class LLMAgent(AgentMixin):
 
         self.system_prompt_template = system_prompt_template
         self.history = []
+        self.mcp_tool_definitions: dict = {}
         self.internal_memory = ""
         log_dir = Path(log_dir) / "agent_logs" if log_dir is not None else log_dir
         self.logger = (
@@ -128,6 +140,9 @@ class LLMAgent(AgentMixin):
             finite_energy=self.finite_energy,
             finite_lifespan=self.finite_lifespan,
             show_nearby_artifact_names=self.show_nearby_artifact_names,
+            max_ts=self.max_ts,
+            init_agents=self.init_agents,
+            scenario_options=self.scenario_options,
         )
         self.system_prompt = render_system_prompt(
             self.system_prompt_template,
@@ -145,6 +160,7 @@ class LLMAgent(AgentMixin):
             scenario_specific_instructions=scenario_instructions,
             internal_memory_size=self.internal_memory_size,
             max_message_length=self.max_message_length,
+            allow_broadcasts=self.allow_broadcasts,
             genome_string=self.genome.as_string(),
             debug=self.debug,
             server_instructions=self.server_instructions,
@@ -153,6 +169,30 @@ class LLMAgent(AgentMixin):
             spawn_allowed=self.spawn_allowed,
             max_connections=self.max_connections,
         ).strip()
+
+    def _build_prompt_sync(self, obs, available_actions, info):
+        # MCP schemas are stable reference material. Keep their definitions in
+        # the instruction prefix; the current menu still governs availability.
+        menu = dict(available_actions)
+        if self.external_actions:
+            for name, spec in available_actions.items():
+                if "input_schema" in spec:
+                    self.mcp_tool_definitions[name] = copy.deepcopy(spec)
+                    menu[name] = {
+                        "description": (
+                            "See MCP tool definitions in the system instructions."
+                        )
+                    }
+        return super()._build_prompt_sync(obs, menu, info)
+
+    def _system_prompt_with_tools(self):
+        if not self.mcp_tool_definitions:
+            return self.system_prompt
+        return (
+            self.system_prompt + "\n\n=== MCP Tool Definitions ===\n"
+            "Only actions listed in the current turn are available.\n"
+            + json.dumps(self.mcp_tool_definitions, sort_keys=True, indent=2)
+        )
 
     async def select_action_async(
         self,
@@ -174,20 +214,21 @@ class LLMAgent(AgentMixin):
 
         # Copy to avoid mutating the shared dict from llm_router.next()
         chat_params = (
-            dict(chat_params) if chat_params is not None else {"model": "o4-mini"}
+            dict(chat_params) if chat_params is not None else {"model": self.model}
         )
         post_prompt = chat_params.pop("post_prompt", None)
         if post_prompt is not None:
             prompt += "\n\n" + post_prompt
 
         messages = [
-            {"role": "system", "content": self.system_prompt},
+            {"role": "system", "content": self._system_prompt_with_tools()},
             {"role": "user", "content": prompt},
         ]
 
         total_input_tokens = 0
         total_output_tokens = 0
         total_cost = 0.0
+        cache_totals = {"cached_input_tokens": 0, "cache_write_input_tokens": 0}
         action = None
 
         for attempt in range(max_attempts):
@@ -201,6 +242,13 @@ class LLMAgent(AgentMixin):
             total_input_tokens += resp.input_tokens
             total_output_tokens += resp.output_tokens
             total_cost += resp.cost
+            for key in cache_totals:
+                value = getattr(resp, key, None)
+                cache_totals[key] = (
+                    cache_totals[key] + value
+                    if cache_totals[key] is not None and value is not None
+                    else None
+                )
             if not text:
                 log.warning(
                     "Empty LLM reply for %s(%s); retrying (attempt %d)",
@@ -217,16 +265,16 @@ class LLMAgent(AgentMixin):
             )
 
             try:
-                act, message, params, internal_memory, reasoning = (
+                act, messages_sent, params, internal_memory, reasoning = (
                     self._parse_response(text, available_actions=available_actions)
                 )
-                self.history.append((formatted_obs, act, message, params, info))
+                self.history.append((formatted_obs, act, messages_sent, params, info))
                 self.history = self.history[-self.max_history :] if self.max_history > 0 else []
                 self.internal_memory = internal_memory
 
                 action = {
                     "action": act,
-                    "message": message,
+                    "messages": messages_sent,
                     "params": params,
                     "source": "llm",
                 }
@@ -247,6 +295,7 @@ class LLMAgent(AgentMixin):
                     action_keys=available_actions.keys(),
                     use_internal_memory=self.use_internal_memory,
                     solo=self.solo,
+                    allow_broadcasts=self.allow_broadcasts,
                 )
                 no_reason_text = (
                     text.split("</think>")[1] if "</think>" in text else text
@@ -263,13 +312,13 @@ class LLMAgent(AgentMixin):
             # self.stay_action). Hardcoding `move` here made social_graph agents
             # emit an unknown `move` action on every parse failure.
             move = self.stay_action.get("action", "move")
-            message = self.stay_action.get("message", "")
+            messages_sent = self.stay_action.get("messages", {})
             params = self.stay_action.get("params", {})
-            self.history.append((formatted_obs, move, message, params, info))
+            self.history.append((formatted_obs, move, messages_sent, params, info))
             self.history = self.history[-self.max_history :] if self.max_history > 0 else []
             action = {
                 "action": move,
-                "message": message,
+                "messages": messages_sent,
                 "params": params,
                 "source": "default",
                 "default_reason": "parse_failure",
@@ -280,17 +329,14 @@ class LLMAgent(AgentMixin):
         action["cost"] = total_cost
         action["input_tokens"] = total_input_tokens
         action["output_tokens"] = total_output_tokens
+        action.update(cache_totals)
 
-        self.logger.log(
-            agent_name=self.agent_name,
-            agent_tag=self.agent_tag,
-            available_actions=available_actions,
-            observation=obs,
-            action=action,
-            internal_memory=self.internal_memory,
-            time=str(time),
-            input_prompt=prompt,
-        )
+        self.turn_record = {
+            "available_actions": available_actions,
+            "observation": obs,
+            "action": action,
+            "input_prompt": prompt,
+        }
         return action
 
     @staticmethod
@@ -331,10 +377,10 @@ class LLMAgent(AgentMixin):
 
     def _parse_response(
         self, text: str, available_actions: dict
-    ) -> Tuple[str, str, Dict, str, str | None]:
+    ) -> Tuple[str, Dict[str, str], Dict, str, str | None]:
         data, reasoning = self._response_object(text)
         action = data.get("action", "")
-        message = data.get("message", "")
+        messages = data.get("messages", {})
         params = data.get("params", {})
         internal_memory = data.get("internal_memory", "")
         internal_memory = self.validate_internal_memory(internal_memory)
@@ -346,8 +392,17 @@ class LLMAgent(AgentMixin):
                 f"Incorrect action. Expected one of {list(available_actions.keys())}; got '{action}'."
             )
 
-        if not isinstance(message, str):
-            message = str(message)
+        if messages is None or messages == "":
+            messages = {}
+        if not isinstance(messages, dict):
+            raise ValueError(
+                "Field 'messages' must be a JSON object that maps a receiver name "
+                "(or 'broadcast') to a text."
+            )
+        messages = {
+            str(receiver): text if isinstance(text, str) else str(text)
+            for receiver, text in messages.items()
+        }
 
         if not isinstance(params, dict):
             raise ValueError("Field 'params' must be a JSON object.")
@@ -383,7 +438,7 @@ class LLMAgent(AgentMixin):
             for key in exp_keys - sent:
                 params[key] = ""
 
-        return action, message, params, internal_memory, reasoning
+        return action, messages, params, internal_memory, reasoning
 
     def close(self):
         self.logger.close()
@@ -393,7 +448,9 @@ class LLMAgent(AgentMixin):
             "name": self.agent_name,
             "tag": self.agent_tag,
             "type": "LLMAgent",
+            "model": self.model,
             "system_prompt": self.system_prompt,
+            "mcp_tool_definitions": self.mcp_tool_definitions,
             "system_prompt_template": self.system_prompt_template,
             "use_inventory": self.use_inventory,
             "artifact_creation": self.artifact_creation,
@@ -411,6 +468,7 @@ class LLMAgent(AgentMixin):
             "internal_memory_size": self.internal_memory_size,
             "max_history": self.max_history,
             "max_message_length": self.max_message_length,
+            "allow_broadcasts": self.allow_broadcasts,
             "verbose": self.verbose,
             "debug": self.debug,
             "internal_memory": self.internal_memory,
@@ -426,7 +484,9 @@ class LLMAgent(AgentMixin):
     def set_state_ckpt(self, state_ckpt: dict):
         self.agent_name = state_ckpt["name"]
         self.agent_tag = state_ckpt["tag"]
+        self.model = state_ckpt.get("model", self.model)
         self.system_prompt = state_ckpt["system_prompt"]
+        self.mcp_tool_definitions = state_ckpt.get("mcp_tool_definitions", {})
         self.finite_energy = state_ckpt["finite_energy"]
         self.finite_lifespan = state_ckpt["finite_lifespan"]
         self.system_prompt_template = state_ckpt["system_prompt_template"]
@@ -441,6 +501,7 @@ class LLMAgent(AgentMixin):
         self.scenario_specific_instructions = state_ckpt["scenario_specific_instructions"]
         self.max_history = state_ckpt["max_history"]
         self.max_message_length = state_ckpt["max_message_length"]
+        self.allow_broadcasts = state_ckpt.get("allow_broadcasts", True)
         self.verbose = state_ckpt["verbose"]
         self.debug = state_ckpt["debug"]
         self.internal_memory_size = state_ckpt["internal_memory_size"]

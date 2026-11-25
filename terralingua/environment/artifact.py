@@ -7,6 +7,7 @@ import numpy as np
 import tiktoken
 
 MAX_TEXT_ARTIFACT_SIZE = 500
+ENCODER = tiktoken.get_encoding("cl100k_base")
 
 ARTIFACT_TYPES: Dict[str, type] = {}
 
@@ -28,7 +29,7 @@ def register_artifact_type(name: str):
 
 def creatable_types() -> Dict[str, str]:
     """Type names agents may create, with their descriptions."""
-    return {name: cls.description for name, cls in ARTIFACT_TYPES.items() if cls.creatable}
+    return {name: cls.type_description for name, cls in ARTIFACT_TYPES.items() if cls.creatable}
 
 
 def describe_types() -> List[dict]:
@@ -46,7 +47,8 @@ def describe_types() -> List[dict]:
         ]
         out.append({
             "name": name,
-            "description": cls.description,
+            "type_description": cls.type_description,
+            "payload_description": cls.payload_description,
             "creatable": bool(cls.creatable),
             "params": params,
         })
@@ -59,7 +61,8 @@ ArtifactCreationError = ValueError
 class Artifact:
     art_type: str = ""
     creatable: bool = False
-    description: str = ""
+    type_description: str = ""
+    payload_description: str = ""
 
     def __init__(
         self,
@@ -91,11 +94,20 @@ class Artifact:
         self.past_versions = []
         self.version = 0
         self.movable = movable
+        self._counted_payload = None
+        self._token_count = 0
 
     @property
     @abstractmethod
     def actions(self) -> dict:
         raise NotImplementedError("Must specify artifact actions")
+
+    def token_count(self) -> int:
+        """Tokens in the payload. Counted again only after the payload changed."""
+        if self._counted_payload is not self.payload:
+            self._counted_payload = self.payload
+            self._token_count = len(ENCODER.encode(str(self.payload)))
+        return self._token_count
 
     def serialize(self) -> dict:
         serialized = {
@@ -163,6 +175,7 @@ class Artifact:
         artifact.remaining_time = remaining_time if "remaining_time" in data else None
         artifact.past_versions = past_versions
         artifact.version = version
+        artifact.version_creation_time = data.get("version_creation_time", creation_time)
         return artifact
 
     @abstractmethod
@@ -194,7 +207,8 @@ class TextArtifact(Artifact):
     """
 
     creatable = True
-    description = f"Any alfanumeric data stored in a physical marker. Maximum size is {MAX_TEXT_ARTIFACT_SIZE} tokens."
+    type_description = "An object containing text."
+    payload_description = f"Text content. Maximum size is {MAX_TEXT_ARTIFACT_SIZE} tokens."
 
     def __init__(
         self,
@@ -207,7 +221,6 @@ class TextArtifact(Artifact):
         movable: bool = True,
         max_tokens: int = MAX_TEXT_ARTIFACT_SIZE,
     ):
-        self.payload_encoder = tiktoken.get_encoding("cl100k_base")
         # Set before super().__init__, which calls verify_payload during construction.
         self.max_tokens = int(max_tokens)
         super().__init__(
@@ -297,7 +310,7 @@ class TextArtifact(Artifact):
         payload = str(payload)
         if not isinstance(payload, str):
             return False, "Payload must be a string for TextArtifact"
-        token_count = len(self.payload_encoder.encode(payload))
+        token_count = len(ENCODER.encode(payload))
         max_tokens = getattr(self, "max_tokens", MAX_TEXT_ARTIFACT_SIZE)
         if token_count > max_tokens:
             return (
@@ -312,6 +325,9 @@ class ContainerArtifact(Artifact):
     Agents can act on it by adding/removing artifacts, or destroing the container.
     Passive effect: list contents
     """
+
+    type_description = "An artifact that holds other artifacts."
+    payload_description = "A list of artifact names."
 
     def __init__(
         self,
@@ -363,6 +379,9 @@ class ResourceModifierArtifact(Artifact):
     Passive effect: modify food generation rates when stepped on.
     """
 
+    type_description = "An artifact that changes food generation rates."
+    payload_description = "A numeric modifier for the food generation rate."
+
     def __init__(
         self,
         name: str,
@@ -404,6 +423,9 @@ class MovementModifierArtifact(Artifact):
     Agents can act on it by changing its modifier or destroing the artifact.
     Passive effect: modify agent movement speed when stepped on.
     """
+
+    type_description = "An artifact that changes movement speed."
+    payload_description = "A numeric modifier for movement speed."
 
     def __init__(
         self,

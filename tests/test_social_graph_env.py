@@ -17,6 +17,7 @@ from terralingua.environment.social_graph_env import (
     GRANTABLE_ABILITY_SPECS,
     OpenSocialGraphWorld,
 )
+from terralingua.mechanics.library import Library, Options
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -30,7 +31,6 @@ def make_social_env(
     max_connections=None,
     random_intro_k=3,
     edge_decay_steps=None,
-    direct_message_cost=0,
     allow_follow=True,
     allow_connection=True,
     connection_request_lifespan=3,
@@ -43,7 +43,6 @@ def make_social_env(
         max_connections=max_connections,
         random_intro_k=random_intro_k,
         edge_decay_steps=edge_decay_steps,
-        direct_message_cost=direct_message_cost,
         allow_follow=allow_follow,
         allow_connection=allow_connection,
         connection_request_lifespan=connection_request_lifespan,
@@ -87,7 +86,7 @@ def follow(env, actor, target, replace=""):
         {
             actor: {
                 "action": "follow",
-                "message": "",
+                "messages": {},
                 "params": {"target": target, "replace": replace},
             }
         }
@@ -99,7 +98,7 @@ def request_connection(env, actor, target, replace=""):
         {
             actor: {
                 "action": "request_connection",
-                "message": "",
+                "messages": {},
                 "params": {"target": target, "replace": replace},
             }
         }
@@ -107,7 +106,7 @@ def request_connection(env, actor, target, replace=""):
 
 
 def noop(env, actor="a0"):
-    return env.step({actor: {"action": "noop", "message": "", "params": {}}})
+    return env.step({actor: {"action": "noop", "messages": {}, "params": {}}})
 
 
 def grant_remove_agent(env, node):
@@ -131,7 +130,7 @@ def remove_agent(env, actor, target):
         {
             actor: {
                 "action": "remove_agent",
-                "message": "",
+                "messages": {},
                 "params": {"target": target},
             }
         }
@@ -153,7 +152,7 @@ def set_role(env, actor, target, role, motivation=""):
         {
             actor: {
                 "action": "set_role",
-                "message": "",
+                "messages": {},
                 "params": {"target": target, "role": role, "motivation": motivation},
             }
         }
@@ -165,7 +164,7 @@ def grant_ability(env, actor, target, ability):
         {
             actor: {
                 "action": "grant_ability",
-                "message": "",
+                "messages": {},
                 "params": {"target": target, "ability": ability},
             }
         }
@@ -177,7 +176,7 @@ def revoke_ability(env, actor, target, ability):
         {
             actor: {
                 "action": "revoke_ability",
-                "message": "",
+                "messages": {},
                 "params": {"target": target, "ability": ability},
             }
         }
@@ -354,7 +353,7 @@ class TestRequestConnection:
             {
                 "a2": {
                     "action": "accept_connection",
-                    "message": "",
+                    "messages": {},
                     "params": {"target": "Alice", "replace": ""},
                 }
             }
@@ -379,7 +378,7 @@ class TestRequestConnection:
             {
                 "a2": {
                     "action": "reject_connection",
-                    "message": "",
+                    "messages": {},
                     "params": {"target": "Alice"},
                 }
             }
@@ -451,7 +450,7 @@ class TestDisconnectDirectional:
             {
                 "a0": {
                     "action": "disconnect",
-                    "message": "",
+                    "messages": {},
                     "params": {"target": "Bob"},
                 }
             }
@@ -470,7 +469,7 @@ class TestDisconnectDirectional:
             {
                 "a0": {
                     "action": "disconnect",
-                    "message": "",
+                    "messages": {},
                     "params": {"target": "Carol"},
                 }
             }
@@ -487,7 +486,7 @@ class TestDisconnectDirectional:
             {
                 "a0": {
                     "action": "disconnect",
-                    "message": "",
+                    "messages": {},
                     "params": {"target": "Dave"},
                 }
             }
@@ -553,7 +552,7 @@ class TestAtCapReplace:
             {
                 "a0": {
                     "action": "accept_connection",
-                    "message": "",
+                    "messages": {},
                     "params": {"target": "Dave", "replace": ""},
                 }
             }
@@ -565,7 +564,7 @@ class TestAtCapReplace:
             {
                 "a0": {
                     "action": "accept_connection",
-                    "message": "",
+                    "messages": {},
                     "params": {"target": "Dave", "replace": "Bob"},
                 }
             }
@@ -622,7 +621,7 @@ class TestBroadcastDirectional:
             {
                 "a1": {
                     "action": "disconnect",
-                    "message": "",
+                    "messages": {},
                     "params": {"target": "Alice"},
                 }
             }
@@ -631,7 +630,7 @@ class TestBroadcastDirectional:
         assert env.world_graph.has_edge(env.agent_pos["a2"], env.agent_pos["a0"])
         # Alice broadcasts.
         obs, _, _, _, _ = env.step(
-            {"a0": {"action": "noop", "message": "hello from A", "params": {}}}
+            {"a0": {"action": "noop", "messages": {"broadcast": "hello from A"}, "params": {}}}
         )
         # Carol follows Alice → hears her. Bob no longer follows Alice → does not.
         assert obs["a2"]["incoming_broadcasts"].get("Alice") == "hello from A"
@@ -643,66 +642,43 @@ class TestBroadcastDirectional:
 # ---------------------------------------------------------------------------
 
 
-class TestDirectMessages:
-    def test_dm_available_only_with_subscriptions_and_affordable(self, tmp_log):
+class TestPrivateMessages:
+    def test_private_message_reaches_the_named_agent_only(self, tmp_log):
         env = make_social_env(tmp_log, topology="ring", n_nodes=3)
         seed_n_agents(env, ["Alice", "Bob", "Carol"])
-        assert "send_direct_message" in env._get_avail_actions("a0")
-
-        # Drop all of Alice's follows → no DM action.
-        env.step({"a0": {"action": "disconnect", "message": "", "params": {"target": "Bob"}}})
-        env.step({"a0": {"action": "disconnect", "message": "", "params": {"target": "Carol"}}})
-        assert "send_direct_message" not in env._get_avail_actions("a0")
-
-    def test_dm_routes_to_recipient_only(self, tmp_log):
-        env = make_social_env(tmp_log, topology="ring", n_nodes=3)
-        seed_n_agents(env, ["Alice", "Bob", "Carol"])
-        obs, _, _, _, _ = env.step(
-            {
-                "a0": {
-                    "action": "send_direct_message",
-                    "message": "",
-                    "params": {"target": "Bob", "content": "secret to Bob"},
-                }
-            }
+        obs, _, _, _, infos = env.step(
+            {"a0": {"action": "noop", "messages": {"Bob": "secret to Bob"}, "params": {}}}
         )
         assert obs["a1"]["incoming_dms"] == {"Alice": "secret to Bob"}
         assert "Alice" not in obs["a1"]["incoming_broadcasts"]
         assert obs["a2"]["incoming_dms"] == {}
+        assert "Message delivery" not in infos["a0"]
 
-    def test_dm_mailbox_clears_each_step(self, tmp_log):
+    def test_private_messages_last_one_step(self, tmp_log):
         env = make_social_env(tmp_log, topology="ring", n_nodes=3)
         seed_n_agents(env, ["Alice", "Bob", "Carol"])
-        env.step(
-            {
-                "a0": {
-                    "action": "send_direct_message",
-                    "message": "",
-                    "params": {"target": "Bob", "content": "hi"},
-                }
-            }
-        )
+        env.step({"a0": {"action": "noop", "messages": {"Bob": "hi"}, "params": {}}})
         obs, _, _, _, _ = noop(env, "a0")
         assert obs["a1"]["incoming_dms"] == {}
 
-    def test_dm_to_non_followee_is_code_enforced(self, tmp_log):
-        # Ring of 4: Alice follows Bob and Dave but NOT Carol. send_direct_message
-        # is available (Alice has follows) but targeting the non-followee Carol —
-        # a value the schema's choices don't offer — must still be rejected.
+    def test_private_message_does_not_use_the_turn(self, tmp_log):
+        env = make_social_env(tmp_log, topology="ring", n_nodes=3)
+        seed_n_agents(env, ["Alice", "Bob", "Carol"])
+        obs, _, _, _, _ = env.step(
+            {"a0": {"action": "disconnect", "messages": {"Carol": "bye Bob"}, "params": {"target": "Bob"}}}
+        )
+        assert not env.world_graph.has_edge(env.agent_pos["a0"], env.agent_pos["a1"])
+        assert obs["a2"]["incoming_dms"] == {"Alice": "bye Bob"}
+
+    def test_private_message_to_an_agent_you_do_not_follow_is_refused(self, tmp_log):
+        # Ring of 4: Alice follows Bob and Dave but NOT Carol.
         env = make_social_env(tmp_log, topology="ring", n_nodes=4, max_connections=10)
         seed_n_agents(env, ["Alice", "Bob", "Carol", "Dave"])
-        assert "send_direct_message" in env._get_avail_actions("a0")
-        _, _, _, _, infos = env.step(
-            {
-                "a0": {
-                    "action": "send_direct_message",
-                    "message": "",
-                    "params": {"target": "Carol", "content": "hi"},
-                }
-            }
+        obs, _, _, _, infos = env.step(
+            {"a0": {"action": "noop", "messages": {"Carol": "hi"}, "params": {}}}
         )
-        assert infos["a0"]["send_direct_message"]["status"] == "failed"
-        assert "follow" in infos["a0"]["send_direct_message"]["reason"].lower()
+        assert "you do not follow Carol" in infos["a0"]["Message delivery"]
+        assert obs["a2"]["incoming_dms"] == {}
 
 
 # ---------------------------------------------------------------------------
@@ -729,7 +705,7 @@ class TestSpawnEdges:
         children_before = list(env.agent_spawn["a0"])
 
         _, _, _, _, infos = env.step(
-            {"a0": {"action": "spawn", "message": "", "params": {"name": "Child"}}}
+            {"a0": {"action": "spawn", "messages": {}, "params": {"name": "Child"}}}
         )
 
         assert infos["a0"]["spawn"] == {
@@ -756,7 +732,7 @@ class TestSpawnEdges:
         nodes_before = set(env.world_graph.all_nodes())
 
         _, _, _, _, infos = env.step(
-            {"a0": {"action": "spawn", "message": "", "params": {"name": "Child"}}}
+            {"a0": {"action": "spawn", "messages": {}, "params": {"name": "Child"}}}
         )
 
         spawn = infos["a0"]["spawn"]
@@ -789,7 +765,7 @@ class TestSpawnEdges:
             {
                 "a0": {
                     "action": "spawn",
-                    "message": "",
+                    "messages": {},
                     "params": {"name": "Child", "partner": "Bob"},
                 }
             }
@@ -828,7 +804,7 @@ class TestSpawnAffordanceInheritance:
         if partner is not None:
             params["partner"] = partner
         _, _, _, _, infos = env.step(
-            {actor: {"action": "spawn", "message": "", "params": params}}
+            {actor: {"action": "spawn", "messages": {}, "params": params}}
         )
         assert infos[actor]["spawn"]["status"] == "successful"
         return infos[actor]["spawn"]["child_tag"]
@@ -915,17 +891,9 @@ class TestEdgeDecayDirectional:
         )
         seed_n_agents(env, ["Alice", "Bob", "Carol"])
         alice, bob = env.agent_pos["a0"], env.agent_pos["a1"]
-        # Alice DMs Bob every step → bumps Alice→Bob only. Bob never DMs Alice.
+        # Alice messages Bob every step → bumps Alice→Bob only. Bob never messages Alice.
         for _ in range(DECAY + 2):
-            env.step(
-                {
-                    "a0": {
-                        "action": "send_direct_message",
-                        "message": "",
-                        "params": {"target": "Bob", "content": "hi"},
-                    }
-                }
-            )
+            env.step({"a0": {"action": "noop", "messages": {"Bob": "hi"}, "params": {}}})
         # Alice→Bob kept (kept warm); Bob→Alice decayed away.
         assert env.world_graph.has_edge(alice, bob)
         assert not env.world_graph.has_edge(bob, alice)
@@ -964,8 +932,8 @@ class TestGiveArtifactBilateral:
         alice = env.agent_pos["a0"]
         self._give_inventory_item(env, "a0", alice)
         # Make every relationship one-way (Bob & Carol unfollow Alice).
-        env.step({"a1": {"action": "disconnect", "message": "", "params": {"target": "Alice"}}})
-        env.step({"a2": {"action": "disconnect", "message": "", "params": {"target": "Alice"}}})
+        env.step({"a1": {"action": "disconnect", "messages": {}, "params": {"target": "Alice"}}})
+        env.step({"a2": {"action": "disconnect", "messages": {}, "params": {"target": "Alice"}}})
         assert env._get_bilateral_names("a0") == []
         assert "give_artifact" not in env._get_avail_actions("a0")
 
@@ -1001,7 +969,7 @@ class TestGiveArtifactBilateral:
             {
                 "a0": {
                     "action": "give_artifact",
-                    "message": "",
+                    "messages": {},
                     "params": {"artifact_name": "gift", "target_agent": "Bob"},
                 }
             }
@@ -1024,12 +992,12 @@ class TestGiveArtifactBilateral:
         alice = env.agent_pos["a0"]
         self._give_inventory_item(env, "a0", alice)
         # Bob unfollows Alice → Alice→Bob is one-way only.
-        env.step({"a1": {"action": "disconnect", "message": "", "params": {"target": "Alice"}}})
+        env.step({"a1": {"action": "disconnect", "messages": {}, "params": {"target": "Alice"}}})
         _, _, _, _, infos = env.step(
             {
                 "a0": {
                     "action": "give_artifact",
-                    "message": "",
+                    "messages": {},
                     "params": {"artifact_name": "gift", "target_agent": "Bob"},
                 }
             }
@@ -1050,11 +1018,10 @@ class TestAvailableActionsStrict:
         env = make_social_env(tmp_log, topology="ring", n_nodes=4, max_connections=10)
         seed_n_agents(env, ["Alice", "Bob", "Carol", "Dave"])
         for target in ("Bob", "Dave"):  # Alice's ring follows
-            env.step({"a0": {"action": "disconnect", "message": "", "params": {"target": target}}})
+            env.step({"a0": {"action": "disconnect", "messages": {}, "params": {"target": target}}})
         assert env._get_subscriptions("a0") == []
         actions = env._get_avail_actions("a0")
         assert "disconnect" not in actions
-        assert "send_direct_message" not in actions
         # But forming actions are available (targets Alice doesn't follow exist).
         assert "follow" in actions
         assert "request_connection" in actions
@@ -1247,206 +1214,6 @@ class TestManagerAbilities:
 
 
 # ---------------------------------------------------------------------------
-# 14. Shared artifact library (commons)
-# ---------------------------------------------------------------------------
-
-
-class TestLibrary:
-    """deposit / retrieve / show, availability gating, death handoff, decay,
-    the use_library ablation flag, and checkpoint persistence."""
-
-    def _make(self, tmp_log, n_nodes=4, **kwargs):
-        env = make_social_env(
-            tmp_log,
-            topology="ring",
-            n_nodes=n_nodes,
-            max_connections=10,
-            artifact_creation_cost=0,
-            use_inventory=True,
-            **kwargs,
-        )
-        seed_n_agents(env, ["Alice", "Bob", "Carol", "Dave"][:n_nodes])
-        return env
-
-    def _seed_on_node(self, env, node, name, payload="some knowledge", movable=True, lifespan=-1):
-        env.seed_artifact(
-            pose=node,
-            art_type="text",
-            art_name=name,
-            payload=payload,
-            lifespan=lifespan,
-            movable=movable,
-        )
-
-    def _step(self, env, tag, action, **params):
-        # Refresh stored avail-actions to current state (the step gate reads the
-        # stored set, not a fresh one) and drive the real dispatch path.
-        env._get_avail_actions(tag)
-        return env.step(
-            {tag: {"action": action, "message": "", "params": params}}
-        )
-
-    # ---- deposit ----
-    def test_deposit_moves_node_artifact_to_library(self, tmp_log):
-        env = self._make(tmp_log)
-        node = env.agent_pos["a0"]
-        self._seed_on_node(env, node, "recipe")
-        _, _, _, _, infos = self._step(env, "a0", "deposit_artifact", name="recipe")
-        assert infos["a0"]["Artifact deposit status"] == "Success"
-        assert env.library == {"recipe"}
-        assert env.artifact_location["recipe"] == ("library", None)
-        assert "recipe" not in env.pos_artifacts[node]
-        assert env.artifacts["recipe"].pose == "Library"
-
-    def test_deposit_from_inventory(self, tmp_log):
-        env = self._make(tmp_log)
-        node = env.agent_pos["a0"]
-        self._seed_on_node(env, node, "tool")
-        env.agent_inventories["a0"].add("tool")
-        env.artifact_location["tool"] = ("inv", "a0")
-        env.pos_artifacts[node].discard("tool")
-        self._step(env, "a0", "deposit_artifact", name="tool")
-        assert env.library == {"tool"}
-        assert "tool" not in env.agent_inventories["a0"]
-
-    def test_fixed_artifact_not_depositable(self, tmp_log):
-        env = self._make(tmp_log)
-        node = env.agent_pos["a0"]
-        self._seed_on_node(env, node, "monument", movable=False)
-        # a fixed artifact is never offered as depositable
-        assert "deposit_artifact" not in env._get_avail_actions("a0")
-        # and the handler rejects it defensively if invoked anyway
-        infos = {"a0": {}}
-        env._handle_deposit_artifact("a0", {"name": "monument"}, infos)
-        assert "Failed" in infos["a0"]["Artifact deposit status"]
-        assert "monument" not in env.library
-        assert "monument" in env.pos_artifacts[node]
-
-    def test_deposit_not_held_rejected(self, tmp_log):
-        env = self._make(tmp_log)
-        # artifact lives on Bob's node; Alice holds nothing depositable
-        self._seed_on_node(env, env.agent_pos["a1"], "bobs_note")
-        assert "deposit_artifact" not in env._get_avail_actions("a0")
-        infos = {"a0": {}}
-        env._handle_deposit_artifact("a0", {"name": "bobs_note"}, infos)
-        assert "Failed" in infos["a0"]["Artifact deposit status"]
-        assert "bobs_note" not in env.library
-
-    # ---- retrieve ----
-    def test_retrieve_moves_to_own_node(self, tmp_log):
-        env = self._make(tmp_log)
-        self._seed_on_node(env, env.agent_pos["a0"], "recipe")
-        self._step(env, "a0", "deposit_artifact", name="recipe")
-        bob_node = env.agent_pos["a1"]
-        _, _, _, _, infos = self._step(env, "a1", "retrieve_artifact", name="recipe")
-        assert infos["a1"]["Artifact retrieve status"] == "Success"
-        assert "recipe" not in env.library
-        assert "recipe" in env.pos_artifacts[bob_node]
-        assert env.artifact_location["recipe"] == ("map", bob_node)
-
-    def test_retrieve_unknown_name_fails(self, tmp_log):
-        env = self._make(tmp_log)
-        # populate the library so retrieve is offered, then ask for a bad name
-        self._seed_on_node(env, env.agent_pos["a0"], "recipe")
-        self._step(env, "a0", "deposit_artifact", name="recipe")
-        _, _, _, _, infos = self._step(env, "a1", "retrieve_artifact", name="ghost")
-        assert "Failed" in infos["a1"]["Artifact retrieve status"]
-        assert env.library == {"recipe"}
-
-    # ---- show ----
-    def test_show_includes_preview_when_enabled(self, tmp_log):
-        env = self._make(tmp_log, library_preview=True)
-        self._seed_on_node(env, env.agent_pos["a0"], "recipe", payload="Bake bread at high heat")
-        self._step(env, "a0", "deposit_artifact", name="recipe")
-        _, _, _, _, infos = self._step(env, "a1", "show_library_content")
-        content = infos["a1"]["Library content"]
-        assert "recipe" in content and "Bake bread" in content
-
-    def test_show_names_only_when_preview_disabled(self, tmp_log):
-        env = self._make(tmp_log, library_preview=False)
-        self._seed_on_node(env, env.agent_pos["a0"], "recipe", payload="Bake bread at high heat")
-        self._step(env, "a0", "deposit_artifact", name="recipe")
-        _, _, _, _, infos = self._step(env, "a1", "show_library_content")
-        content = infos["a1"]["Library content"]
-        assert "recipe" in content and "Bake bread" not in content
-
-    # ---- availability gating ----
-    def test_action_availability(self, tmp_log):
-        env = self._make(tmp_log)
-        # empty library, no holdings: only show is available
-        acts = env._get_avail_actions("a0")
-        assert "show_library_content" in acts
-        assert "retrieve_artifact" not in acts
-        assert "deposit_artifact" not in acts
-        # holding a movable artifact exposes deposit
-        self._seed_on_node(env, env.agent_pos["a0"], "recipe")
-        assert "deposit_artifact" in env._get_avail_actions("a0")
-        # a non-empty library exposes retrieve to everyone
-        self._step(env, "a0", "deposit_artifact", name="recipe")
-        assert "retrieve_artifact" in env._get_avail_actions("a1")
-
-    def test_count_surfaced_in_observation(self, tmp_log):
-        env = self._make(tmp_log)
-        self._seed_on_node(env, env.agent_pos["a0"], "recipe")
-        obs, _, _, _, _ = self._step(env, "a0", "deposit_artifact", name="recipe")
-        assert "Shared library: 1 artifact" in obs["a0"]["observation_text"]
-
-    # ---- death handoff ----
-    def test_death_moves_node_and_inventory_artifacts_to_library(self, tmp_log):
-        env = self._make(tmp_log)
-        bob_node = env.agent_pos["a1"]
-        # one in Bob's inventory, one already sitting on his node (not picked up)
-        self._seed_on_node(env, bob_node, "held")
-        env.agent_inventories["a1"].add("held")
-        env.artifact_location["held"] = ("inv", "a1")
-        env.pos_artifacts[bob_node].discard("held")
-        self._seed_on_node(env, bob_node, "onnode")
-        env._kill("a1")
-        assert {"held", "onnode"} <= env.library
-        assert env.artifact_location["held"] == ("library", None)
-        assert env.artifact_location["onnode"] == ("library", None)
-        assert bob_node not in set(env.world_graph.all_nodes())
-        assert not env.pos_artifacts.get(bob_node)
-
-    # ---- ablation flag ----
-    def test_disabled_hides_actions_and_cleans_up_on_death(self, tmp_log):
-        env = self._make(tmp_log, use_library=False)
-        assert "show_library_content" not in env._get_avail_actions("a0")
-        bob_node = env.agent_pos["a1"]
-        self._seed_on_node(env, bob_node, "doomed")
-        env._kill("a1")
-        assert "doomed" not in env.artifacts
-        assert "doomed" not in env.artifact_location
-        assert not env.library
-        assert bob_node not in set(env.world_graph.all_nodes())
-        assert not env.pos_artifacts.get(bob_node)
-        assert any(a.name == "doomed" for a in env.expired_artifacts)
-
-    # ---- decay ----
-    def test_library_artifact_decays(self, tmp_log):
-        env = self._make(tmp_log)
-        self._seed_on_node(env, env.agent_pos["a0"], "ephemeral", lifespan=2)
-        self._step(env, "a0", "deposit_artifact", name="ephemeral")
-        assert "ephemeral" in env.library
-        for _ in range(4):
-            noop(env, "a0")
-        assert "ephemeral" not in env.library
-        assert "ephemeral" not in env.artifacts
-        assert any(a.name == "ephemeral" for a in env.expired_artifacts)
-
-    # ---- persistence ----
-    def test_library_survives_checkpoint(self, tmp_log):
-        env = self._make(tmp_log)
-        self._seed_on_node(env, env.agent_pos["a0"], "recipe")
-        self._step(env, "a0", "deposit_artifact", name="recipe")
-        ckpt = env.get_state_ckpt()
-        env2 = self._make(tmp_log)
-        env2.set_state_ckpt(ckpt)
-        assert env2.library == {"recipe"}
-        assert env2.artifact_location["recipe"] == ("library", None)
-
-
-# ---------------------------------------------------------------------------
 # Follow bootstrap (newborns must arrive heard)
 # ---------------------------------------------------------------------------
 
@@ -1472,3 +1239,205 @@ class TestFollowBootstrap:
         env.add_agent("a9", "Kid", "no_traits", position=env.world_graph.all_nodes()[4])
         env.bootstrap_follows("a9")  # no parent: hub anchor
         assert env.world_graph.has_edge(env.agent_pos["a9"], env.agent_pos[bob])
+
+
+def stored_artifacts(env):
+    return {name for mechanic in env.mechanics if isinstance(mechanic, Library) for name in mechanic.stored(env)}
+
+
+class TestLibrary:
+    """deposit / retrieve / show, availability gating, death handoff, decay,
+    optional mechanic attachment, and checkpoint persistence."""
+
+    def _make(self, tmp_log, n_nodes=4, **kwargs):
+        enabled = kwargs.pop("use_library", True)
+        kwargs.pop("library_preview", None)
+        env = make_social_env(
+            tmp_log,
+            topology="ring",
+            n_nodes=n_nodes,
+            max_connections=10,
+            artifact_creation_cost=0,
+            use_inventory=True,
+            **kwargs,
+        )
+        if enabled:
+            env.attach(Library(Options()))
+        seed_n_agents(env, ["Alice", "Bob", "Carol", "Dave"][:n_nodes])
+        return env
+
+    def _seed_on_node(self, env, node, name, payload="some knowledge", movable=True, lifespan=-1):
+        env.seed_artifact(
+            pose=node,
+            art_type="text",
+            art_name=name,
+            payload=payload,
+            lifespan=lifespan,
+            movable=movable,
+        )
+
+    def _step(self, env, tag, action, **params):
+        # Refresh stored avail-actions to current state (the step gate reads the
+        # stored set, not a fresh one) and drive the real dispatch path.
+        env._get_avail_actions(tag)
+        return env.step(
+            {tag: {"action": action, "messages": {}, "params": params}}
+        )
+
+    # ---- deposit ----
+    def test_deposit_moves_node_artifact_to_library(self, tmp_log):
+        env = self._make(tmp_log)
+        node = env.agent_pos["a0"]
+        self._seed_on_node(env, node, "recipe")
+        _, _, _, _, infos = self._step(env, "a0", "deposit_artifact", name="recipe")
+        assert infos["a0"]["Action outcome"] == "Artifact recipe deposited."
+        assert stored_artifacts(env) == {"recipe"}
+        assert env.artifact_location["recipe"] == ("stored", "library")
+        assert "recipe" not in env.pos_artifacts[node]
+        assert env.artifacts["recipe"].pose == "stored"
+
+    def test_deposit_from_inventory(self, tmp_log):
+        env = self._make(tmp_log)
+        node = env.agent_pos["a0"]
+        self._seed_on_node(env, node, "tool")
+        env.agent_inventories["a0"].add("tool")
+        env.artifact_location["tool"] = ("inv", "a0")
+        env.pos_artifacts[node].discard("tool")
+        self._step(env, "a0", "deposit_artifact", name="tool")
+        assert stored_artifacts(env) == {"tool"}
+        assert "tool" not in env.agent_inventories["a0"]
+
+    def test_fixed_artifact_not_depositable(self, tmp_log):
+        env = self._make(tmp_log)
+        node = env.agent_pos["a0"]
+        self._seed_on_node(env, node, "monument", movable=False)
+        # a fixed artifact is never offered as depositable
+        assert "deposit_artifact" not in env._get_avail_actions("a0")
+        # and the handler rejects it defensively if invoked anyway
+        result = env.mechanics[0].deposit_artifact(env, "a0", {"name": "monument"})
+        assert "not one of your movable artifacts" in result
+        assert "monument" not in stored_artifacts(env)
+        assert "monument" in env.pos_artifacts[node]
+
+    def test_deposit_not_held_rejected(self, tmp_log):
+        env = self._make(tmp_log)
+        # artifact lives on Bob's node; Alice holds nothing depositable
+        self._seed_on_node(env, env.agent_pos["a1"], "bobs_note")
+        assert "deposit_artifact" not in env._get_avail_actions("a0")
+        result = env.mechanics[0].deposit_artifact(env, "a0", {"name": "bobs_note"})
+        assert "not one of your movable artifacts" in result
+        assert "bobs_note" not in stored_artifacts(env)
+
+    # ---- retrieve ----
+    def test_retrieve_moves_to_own_node(self, tmp_log):
+        env = self._make(tmp_log)
+        self._seed_on_node(env, env.agent_pos["a0"], "recipe")
+        self._step(env, "a0", "deposit_artifact", name="recipe")
+        bob_node = env.agent_pos["a1"]
+        _, _, _, _, infos = self._step(env, "a1", "retrieve_artifact", name="recipe")
+        assert infos["a1"]["Action outcome"] == "Artifact recipe is now on your position."
+        assert "recipe" not in stored_artifacts(env)
+        assert "recipe" in env.pos_artifacts[bob_node]
+        assert env.artifact_location["recipe"] == ("map", bob_node)
+
+    def test_retrieve_unknown_name_fails(self, tmp_log):
+        env = self._make(tmp_log)
+        # populate the library so retrieve is offered, then ask for a bad name
+        self._seed_on_node(env, env.agent_pos["a0"], "recipe")
+        self._step(env, "a0", "deposit_artifact", name="recipe")
+        _, _, _, _, infos = self._step(env, "a1", "retrieve_artifact", name="ghost")
+        assert "No artifact named ghost" in infos["a1"]["Action outcome"]
+        assert stored_artifacts(env) == {"recipe"}
+
+    # ---- show ----
+    def test_read_returns_artifact_text(self, tmp_log):
+        env = self._make(tmp_log)
+        self._seed_on_node(env, env.agent_pos["a0"], "recipe", payload="Bake bread at high heat")
+        self._step(env, "a0", "deposit_artifact", name="recipe")
+        _, _, _, _, infos = self._step(env, "a1", "read_artifact", name="recipe")
+        content = infos["a1"]["Action outcome"]
+        assert "recipe" in content and "Bake bread" in content
+
+    def test_show_metadata_omits_payload(self, tmp_log):
+        env = self._make(tmp_log)
+        self._seed_on_node(env, env.agent_pos["a0"], "recipe", payload="Bake bread at high heat")
+        self._step(env, "a0", "deposit_artifact", name="recipe")
+        _, _, _, _, infos = self._step(env, "a1", "show_library_content")
+        content = infos["a1"]["Action outcome"]
+        assert "recipe" in content and "Bake bread" not in content
+
+    # ---- availability gating ----
+    def test_action_availability(self, tmp_log):
+        env = self._make(tmp_log)
+        # empty library, no holdings: only show is available
+        acts = env._get_avail_actions("a0")
+        assert "show_library_content" in acts
+        assert "retrieve_artifact" not in acts
+        assert "deposit_artifact" not in acts
+        # holding a movable artifact exposes deposit
+        self._seed_on_node(env, env.agent_pos["a0"], "recipe")
+        assert "deposit_artifact" in env._get_avail_actions("a0")
+        # a non-empty library exposes retrieve to everyone
+        self._step(env, "a0", "deposit_artifact", name="recipe")
+        assert "retrieve_artifact" in env._get_avail_actions("a1")
+
+    def test_count_surfaced_in_observation(self, tmp_log):
+        env = self._make(tmp_log)
+        self._seed_on_node(env, env.agent_pos["a0"], "recipe")
+        self._step(env, "a0", "deposit_artifact", name="recipe")
+        infos = self._step(env, "a0", "show_library_content")[4]
+        assert "Library: 1 artifact" in infos["a0"]["Action outcome"]
+
+    # ---- death handoff ----
+    def test_death_moves_node_and_inventory_artifacts_to_library(self, tmp_log):
+        env = self._make(tmp_log)
+        bob_node = env.agent_pos["a1"]
+        # one in Bob's inventory, one already sitting on his node (not picked up)
+        self._seed_on_node(env, bob_node, "held")
+        env.agent_inventories["a1"].add("held")
+        env.artifact_location["held"] = ("inv", "a1")
+        env.pos_artifacts[bob_node].discard("held")
+        self._seed_on_node(env, bob_node, "onnode")
+        env._kill("a1")
+        assert {"held", "onnode"} <= stored_artifacts(env)
+        assert env.artifact_location["held"] == ("stored", "library")
+        assert env.artifact_location["onnode"] == ("stored", "library")
+        assert bob_node not in set(env.world_graph.all_nodes())
+        assert not env.pos_artifacts.get(bob_node)
+
+    # ---- ablation flag ----
+    def test_disabled_hides_actions_and_cleans_up_on_death(self, tmp_log):
+        env = self._make(tmp_log, use_library=False)
+        assert "show_library_content" not in env._get_avail_actions("a0")
+        bob_node = env.agent_pos["a1"]
+        self._seed_on_node(env, bob_node, "doomed")
+        env._kill("a1")
+        assert "doomed" not in env.artifacts
+        assert "doomed" not in env.artifact_location
+        assert not stored_artifacts(env)
+        assert bob_node not in set(env.world_graph.all_nodes())
+        assert not env.pos_artifacts.get(bob_node)
+        assert any(a.name == "doomed" for a in env.expired_artifacts)
+
+    # ---- decay ----
+    def test_library_artifact_decays(self, tmp_log):
+        env = self._make(tmp_log)
+        self._seed_on_node(env, env.agent_pos["a0"], "ephemeral", lifespan=2)
+        self._step(env, "a0", "deposit_artifact", name="ephemeral")
+        assert "ephemeral" in stored_artifacts(env)
+        for _ in range(4):
+            noop(env, "a0")
+        assert "ephemeral" not in stored_artifacts(env)
+        assert "ephemeral" not in env.artifacts
+        assert any(a.name == "ephemeral" for a in env.expired_artifacts)
+
+    # ---- persistence ----
+    def test_library_survives_checkpoint(self, tmp_log):
+        env = self._make(tmp_log)
+        self._seed_on_node(env, env.agent_pos["a0"], "recipe")
+        self._step(env, "a0", "deposit_artifact", name="recipe")
+        ckpt = env.get_state_ckpt()
+        env2 = self._make(tmp_log)
+        env2.set_state_ckpt(ckpt)
+        assert stored_artifacts(env2) == {"recipe"}
+        assert env2.artifact_location["recipe"] == ("stored", "library")
