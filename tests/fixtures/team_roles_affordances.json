@@ -43,7 +43,7 @@
                 "description": "Revoke an ability from an agent you are connected to.",
                 "params": {
                     "target": "Name of an agent you are connected to.",
-                    "ability": "Ability to revoke. One of: remove_agent, set_role, grant_ability, revoke_ability, or a standard action (e.g. follow, spawn, send_direct_message)."
+                    "ability": "Ability to revoke. One of: remove_agent, set_role, grant_ability, revoke_ability, or a standard action (e.g. follow, spawn, give_artifact)."
                 },
                 "effect": {
                     "type": "revoke_ability"

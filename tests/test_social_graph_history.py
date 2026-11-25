@@ -53,7 +53,7 @@ def assert_actual_graph(row, env):
 def act(env, tag, action_name, **params):
     for agent in env.agent_registry:
         env._get_avail_actions(agent)
-    result = env.step({tag: {"action": action_name, "message": "", "params": params}})
+    result = env.step({tag: {"action": action_name, "messages": {}, "params": params}})
     assert result[4][tag][action_name]["status"] == "successful"
     return result
 
@@ -261,6 +261,7 @@ def test_runner_records_initial_and_post_respawn_state_headlessly(world, tmp_pat
     def fake_agent(tag, name, genome=None):
         return SimpleNamespace(
             agent_name=name, genome=genome or NoTraitsGenome(), close=lambda: None,
+            log_turn=lambda step: None,
         )
     runner.agents = {
         tag: fake_agent(tag, world.agent_names[tag]) for tag in world.agent_registry
@@ -272,7 +273,7 @@ def test_runner_records_initial_and_post_respawn_state_headlessly(world, tmp_pat
     dead_node = world.agent_pos["a3"]
     world.agent_time["a3"] = 1
     async def collect(ts):
-        return {"a0": {"action": "noop", "params": {}, "message": ""}}
+        return {"a0": {"action": "noop", "params": {}, "messages": {}}}
     runner._collect_actions = collect
     asyncio.run(runner.run_async())
     rows = read_social_graph_history(tmp_path / "social_graph.jsonl")["snapshots"]

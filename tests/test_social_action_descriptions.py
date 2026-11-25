@@ -4,11 +4,10 @@ import copy
 
 from terralingua.environment.actions import (
     ACTION_TEXT,
-    build_deposit_artifact_action,
-    build_retrieve_artifact_action,
     build_spawn_action,
     describe_social_actions,
 )
+from terralingua.mechanics.library import Library, Options
 
 
 def test_social_descriptions_preserve_shared_templates_costs_and_choices():
@@ -108,9 +107,12 @@ def test_spawn_partner_wording_preserves_eligibility_schema_and_cost():
     assert "partner" not in solo["params"]
 
 
-def test_library_descriptions_avoid_spatial_wording():
-    for builder in (build_deposit_artifact_action, build_retrieve_artifact_action):
-        _, entry = builder(["guide", "notes"])
-        for word in ("node", "location", "position"):
-            assert word not in entry["description"]
-            assert word not in entry["params"]["name"]["description"]
+def test_library_descriptions_explain_shared_storage():
+    library = Library(Options())
+    deposit = library.entry("deposit_artifact")
+    retrieve = library.entry("retrieve_artifact")
+    assert "movable" in deposit["description"]
+    assert "library" in deposit["description"]
+    assert "out of the library" in retrieve["description"]
+    for entry in (deposit, retrieve):
+        assert "name" in entry["params"]

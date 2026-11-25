@@ -473,7 +473,7 @@
     }
     .human-dir-btn:hover { background: var(--border); color: var(--text); }
     .human-dir-btn.selected { background: rgba(16,185,129,0.16); border-color: var(--accent); color: var(--accent); }
-    .human-card-message {
+    .human-card-message, .human-card-private {
       width: 100%; background: var(--surface); border: 1px solid var(--border);
       border-radius: 5px; color: var(--text); padding: 0.28rem 0.45rem; font-size: 0.78rem;
     }
@@ -492,6 +492,7 @@
     .human-card--waiting .human-card-name { color: var(--muted); }
     .human-card--waiting .human-card-action-select,
     .human-card--waiting .human-card-message,
+    .human-card--waiting .human-card-private,
     .human-card--waiting .human-param-input { opacity: 0.5; }
     .human-card--waiting .human-card-submit {
       background: var(--border);

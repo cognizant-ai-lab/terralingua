@@ -34,18 +34,33 @@ config:
 
 The runner imports the module when it starts, before it reads any external server configuration. Anything registered at import time, such as artifact types, is in place from then on. The runner then calls `build` when it creates the world, and again on resume.
 
+Mechanics that ship with TerraLingua, such as the shared library in `terralingua.mechanics.library`, attach through `run.mechanics`, a mapping from module path to options. Each module exposes the same two names. They attach before the scenario's mechanics, so a scenario may reword or remove their menu entries.
+
+```yaml
+config:
+  run:
+    mechanics:
+      terralingua.mechanics.library:
+        max_size: -1
+        notifications: all
+```
+
 The package can live under `scenarios/` in this repository, or in its own repository that installs `terralingua`. The module path must be importable: run the command from the folder that holds the package (the runner puts the working directory on the import path), or install the package with pip.
 
 ## The mechanic
 
-A mechanic is a subclass of `terralingua.environment.mechanic.Mechanic`. It has three hooks and one lookup. Every one does nothing by default. A subclass that defines `__init__` must call `super().__init__()`.
+A mechanic is a subclass of `terralingua.environment.mechanic.Mechanic`. It has hooks and one lookup. Every one does nothing by default. A subclass that defines `__init__` must call `super().__init__()`.
 
 | Hook | When the world calls it | What it may do |
 |---|---|---|
-| `on_menu(env, tag, menu) -> menu` | Whenever the world builds a being's action menu: at the end of each step N for step N+1, at restart, and when a being is added. The menu already has affordances, removals, and exclusions applied. | Drop, add, or reword menu entries. |
+| `on_menu(env, tag, menu) -> menu` | Whenever the world builds a being's action menu: at the end of each step N for step N+1, at restart, and when a being is added. The menu holds the world's actions and the affordances. The world applies removals and excluded actions after every mechanic ran, by full name, to the mechanics' entries too. | Drop, add, or reword menu entries. |
 | `on_action(env, tag, action, params) -> str or None` | Right before the world executes one being's action in step N, after the action passed the menu and parameter checks. Earlier beings' actions of the same step are already applied. | Return `None` to let the world run the action. Return a string to take the action over: the world skips its own handling, shows the string to the being under "Action outcome", and logs a `MECHANIC_ACTION` event. Use it to refuse an action with a reason, or to carry out an action the mechanic added to the menu. |
 | `on_step(env, infos)` | Once per step, after all actions and artifact updates, before energy drain and deaths. | Change state, energy, notes, artifacts. Changes appear in the observations sent at the end of the step. |
+| `on_birth(env, tag)` | When the world adds a being, after it is registered and before its first observation is built. | Write a note with `env.note`. It reaches the first observation of a being added to a running world. The founders' first observations are built by `restart_env`, which starts with no notes. |
+| `on_death(env, tag, artifacts)` | When a being dies, before the world discards what dies with it. `artifacts` names those artifacts: in the social graph the being's inventory and the artifacts on its node, in the other worlds nothing. | Keep an artifact with `env.detach_artifact(name, holder)`. The world expires the rest. Do not change the list. |
+| `instructions(env) -> str or None` | Once when the runner creates the world, before any being exists. | Return the text that explains the mechanic's rules. It goes into every being's system prompt, after the instructions of the external services. |
 | `identity(env, tag) -> dict or None` | Once when the runner creates a new being, before the world adds it. Not called on resume. | Return `{"name": ..., "persona": ...}`. Both keys are optional. The name replaces the generated one. The persona is appended to the being's personality in the system prompt. |
+| `on_identity(env, tag, identity) -> dict or None` | Right after `identity`, with the identity the being ends up with: its entry from the personas file, other keys such as a role, or what `identity` answered. | Return keys that complete it, or `None`. |
 
 Mechanics run in the order `build` returns them. The menu one mechanic returns is the input of the next. The first string from `on_action` wins. The first identity wins.
 
@@ -78,11 +93,12 @@ An action that exists only in the mechanic must be handled in `on_action`. The w
 | `env.agent_names[tag]`, `env.name_to_tag[name]` | Names are what beings see. Tags are what the engine uses. |
 | `env.agent_energy[tag]` | Energy. |
 | `env.agent_inventories[tag]` | Names of the artifacts a being carries. |
-| `env.artifacts[name]` | The artifact objects. `env.pos_artifacts[pose]` holds the names on a cell or node. `env.artifact_location[name]` is `("map", pose)` or `("inv", tag)`. |
+| `env.artifacts[name]` | The artifact objects. `env.pos_artifacts[pose]` holds the names on a cell or node. `env.artifact_location[name]` is `("map", pose)`, `("inv", tag)` or `("stored", holder)`, the holder being the name of the mechanic that detached it. |
 | `env.agents_within(tag, r)` | Tags of the other beings within distance `r`, sorted. |
+| `env.audience_of(tag)` | Tags of the beings that receive what `tag` broadcasts: its followers in the social graph, the beings within perception range elsewhere. |
 | `env.distance(a, b)` | Distance between two positions in the world's own measure: Chebyshev on a torus grid, hops on a graph. |
 | `env.transfers` | This step's successful `give`, `take`, and `give_artifact` as `(giver, receiver, kind)`. Rebuilt every step. |
-| `env.deaths` | Records of the previous step's deaths: tag, name, position, reason, artifacts, step. |
+| `env.deaths` | Records of the previous step's deaths: tag, name, position, reason, step, and `artifacts`, the names that left the being's hands, dropped where it stood or expired with it. |
 | `env.departures` | Records of the beings that left the world alive in the previous step, through `env.depart`: the same fields. |
 | `env.departing` | Tags queued to leave at the end of this step. A mechanic's `on_step` may leave them alone. |
 | `env.rng` | A numpy generator seeded by `run.seed`. Use it for every random choice, so a run repeats. |
@@ -99,6 +115,8 @@ An action that exists only in the mechanic must be handled in `on_action`. The w
 | `env.agent_energy[tag] -= amount` | Energy changes take effect at once. |
 | `env.seed_artifact(pose, art_type, name, payload, lifespan, movable=True, to_inventory=None, **params)` | Places an artifact without an energy check. Returns `(message, final_name)`. The name gets a suffix on collision. `params` go to the artifact class. |
 | `env.add_artifact(pose, art_type, name, payload, creator, lifespan, movable=True, to_inventory=None, **params)` | The same, charged to `creator` at the world's artifact cost. |
+| `env.place_artifact(name, pose)`, `env.stow_artifact(name, tag)`, `env.detach_artifact(name, holder)` | Move an existing artifact onto a cell or node, into an inventory, or out of both. A detached artifact stays in `env.artifacts` under the holder's name, no being can reach it, and the world no longer ages it; the holder ages it with `env.age_artifact(name)`. |
+| `env.expire_artifact(name, **fields)` | Removes an artifact for good and logs an `ARTIFACT_REMOVED` event with `fields`. |
 | `env.no_appetite` | A set of tags. A being in the set leaves the food on its cell untouched. The world checks it right after each move, so a tag added in step N takes effect from step N+1. |
 | `env.logger.log(time=env.step_count, event_type="MY_EVENT", **fields)` | Writes one line to the world log. Use an upper-case string as the event name. Check `env.logger` first. |
 
@@ -117,10 +135,12 @@ An artifact type is a subclass of `terralingua.environment.artifact.Artifact` wi
 ```python
 @register_artifact_type("shelter")
 class ShelterArtifact(Artifact):
-    description = "A shelter. Beings on its cell are safe from storms."
+    type_description = "A shelter. Beings on its cell are safe from storms."
+    payload_description = "No content is required."
 ```
 
-- `description` is what beings read about the type.
+- `type_description` explains the artifact in the `type` parameter.
+- `payload_description` explains the content expected in the `payload` parameter.
 - `creatable` is `False` by default, so beings cannot make it with `create_artifact`. Set it to `True` to let them.
 - The class must define `actions` (a property, a dict of the actions beings can take on it), `interact`, `passive_effect` (the text a being sees when it stands next to it), and `verify_payload`.
 - Extra constructor arguments, such as a radius, come from `**params` of `seed_artifact`. Override `serialize` and `deserialize` to save and restore them with the world.
@@ -154,7 +174,7 @@ A preset can also hand out personas from a file with `agent.personas_path`, with
 
 ## The beings' instructions
 
-`agent.scenario_specific_instructions` is a builtin name (`base`, `creative`, `survival`, `none`) or a path to a Markdown file. A path in a preset is relative to the preset's folder. The file is rendered with Jinja. Two variables are set: `finite_energy` and `finite_lifespan`. A file can include partials from its own folder, and from any path under `<working directory>/scenarios/`, for example `{% include "_prompts/shared.md" %}`.
+`agent.scenario_specific_instructions` is a builtin name (`base`, `creative`, `survival`, `none`) or a path to a Markdown file. A path in a preset is relative to the preset's folder. The file is rendered with Jinja. Three variables are set: `finite_energy`, `finite_lifespan`, and `max_ts`, the step budget of the run, -1 when the run has no end. A file can include partials from its own folder, and from any path under `<working directory>/scenarios/`, for example `{% include "_prompts/shared.md" %}`.
 
 Write facts about how the world works. Do not tell beings what to do with them. Action texts belong in the menu, not here.
 

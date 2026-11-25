@@ -117,7 +117,7 @@ def make_env(kind, tmp_path, topology="complete", n_agents=N_AGENTS, hocon=HOCON
 
 def step_one(env, actor, action, params=None):
     _, _, _, _, infos = env.step(
-        {actor: {"action": action, "message": "", "params": params or {}}}
+        {actor: {"action": action, "messages": {}, "params": params or {}}}
     )
     return infos
 

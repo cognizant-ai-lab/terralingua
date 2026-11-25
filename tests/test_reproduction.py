@@ -38,7 +38,7 @@ def make_world(kind, directory, *, cost=20, food=False, paired=False, cap=None):
 
 
 def birth(params=None):
-    return {"action": "spawn", "message": "", "params": {"name": "Child", **(params or {})}}
+    return {"action": "spawn", "messages": {}, "params": {"name": "Child", **(params or {})}}
 
 
 @pytest.mark.parametrize("kind", KINDS)

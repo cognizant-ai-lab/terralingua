@@ -14,7 +14,7 @@ from terralingua.genome.no_traits import Genome
 
 
 def observation(energy=float("inf"), time=float("inf")):
-    return {"energy": energy, "time": time, "observation": {(0, 0): ["Alice"]},
+    return {"energy": energy, "time": time, "lifespan": 100 if np.isfinite(time) else float("inf"), "observation": {(0, 0): ["Alice"]},
             "observation_text": "Observation at simulation step 12",
             "incoming_broadcasts": {}, "inventory": []}
 
@@ -38,9 +38,9 @@ def test_prompt_visibility_uses_actual_resources(tmp_path, kind, energy, remaini
     formatted, prompt = agent._build_prompt_sync(obs, {"noop": {"params": {}}}, {})
     assert formatted["energy"] == energy
     assert ("Energy:" in prompt) == np.isfinite(energy)
-    assert ("Remaining lifespan" in prompt) == np.isfinite(remaining)
+    assert ("Life lived" in prompt) == np.isfinite(remaining)
     assert ("When your energy reaches" in agent.system_prompt) == np.isfinite(energy)
-    assert ("set life span" in agent.system_prompt) == np.isfinite(remaining)
+    assert ("life has a set length" in agent.system_prompt) == np.isfinite(remaining)
     if not np.isfinite(energy):
         assert "energy" not in agent.system_prompt.lower()
     if not np.isfinite(remaining):
@@ -57,7 +57,7 @@ def test_infinite_parent_does_not_hide_finite_child_budget(tmp_path, kind):
     agent = make_agent(kind, tmp_path, finite_energy=False, finite_lifespan=False)
     agent._build_prompt_sync(observation(10), {}, {})
     assert "When your energy reaches 0" in agent.system_prompt
-    assert "set life span" not in agent.system_prompt
+    assert "life has a set length" not in agent.system_prompt
     agent.close()
 
 
@@ -70,10 +70,10 @@ def test_checkpoint_prompt_refreshes_when_actual_resources_change(tmp_path, kind
     _, prompt = agent._build_prompt_sync(observation(), {}, {})
     assert "STALE" not in agent.system_prompt
     assert "energy" not in agent.system_prompt.lower()
-    assert "Remaining lifespan" not in prompt
+    assert "Life lived" not in prompt
     # A finite remaining lifetime in another checkpoint is preserved, not reset.
     agent._build_prompt_sync(observation(23, 7), {}, {})
-    assert "set life span" in agent.system_prompt
+    assert "life has a set length" in agent.system_prompt
     agent.close()
 
 
@@ -97,7 +97,7 @@ def test_human_prompt_and_generated_memory(tmp_path, monkeypatch, capsys, energy
     text = capsys.readouterr().out
     memory = agent._update_memory(formatted, "noop", {})
     assert ("Energy:" in text) == np.isfinite(energy)
-    assert ("Remaining lifespan" in text) == np.isfinite(remaining)
+    assert ("Life lived" in text) == np.isfinite(remaining)
     assert ("'energy'" in memory) == np.isfinite(energy)
     assert ("time_left" in memory) == np.isfinite(remaining)
     agent.close()
@@ -142,7 +142,7 @@ def test_finite_life_still_counts_down_and_expires(tmp_path):
 def test_runner_assigns_unlimited_life_to_new_agents():
     runner = SimulationRunner.__new__(SimulationRunner)
     runner.params = SimpleNamespace(env=SimpleNamespace(agent_lifespan=-1))
-    runner.env = SimpleNamespace(agent_time={"a": 1}, rng=np.random.default_rng(10))
+    runner.env = SimpleNamespace(agent_time={"a": 1}, agent_lifespan={}, rng=np.random.default_rng(10))
     runner.obs = {"a": {"time": 1}}
     assert np.isinf(runner._assign_sampled_lifespan("a"))
     assert np.isinf(runner.env.agent_time["a"])

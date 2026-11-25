@@ -8,7 +8,7 @@ from terralingua.config.evaluation import evaluate
 from terralingua.config.models import EnvConfig, GraphConfig
 from terralingua.environment.graph_env import OpenGraphWorld
 
-STAY = {"action": "move", "message": "", "params": {"direction": "stay"}}
+STAY = {"action": "move", "messages": {}, "params": {"direction": "stay"}}
 
 
 def make_env(tmp_path, **kwargs):

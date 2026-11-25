@@ -26,7 +26,6 @@ SOCIAL = when("env.world_type", const="social_graph")
 PLAIN_GRAPH = when("env.world_type", const="graph")
 FOOD = every(when("env.food_mechanism", const=True), {"not": SOCIAL})
 REPRODUCTION = when("env.reproduction_cost", minimum=0)
-LIBRARY = every(SOCIAL, when("env.use_library", const=True))
 AUTHORING = when("env.artifact_creation_cost", minimum=0)
 EXTERNAL = when("run.external_servers_config", type="string", minLength=1)
 REMOTE = when("run.remote_api_enabled", const=True)
@@ -46,16 +45,17 @@ GROUPS = {
         "agent.internal_memory_size", "agent.max_history",
     ],
     "Model": [
-        "agent.model", "agent.max_tokens", "agent.reasoning_effort",
+        "agent.model", "agent.model_assignment", "agent.inherited_model",
+        "agent.max_tokens", "agent.reasoning_effort",
         "run.max_parallel_workers", "run.ports",
     ],
     "Artifacts": [
         "agent.use_inventory", "env.artifact_creation_cost",
         "env.allow_fixed_artifacts", "env.max_artifact_tokens", "env.inert_artifacts", "env.show_nearby_artifact_names",
-        "env.init_artifacts_path", "env.use_library", "env.library_preview",
+        "env.init_artifacts_path",
     ],
     "Communication": [
-        "env.max_message_length", "env.graph.direct_message_cost",
+        "env.max_message_length", "env.allow_broadcasts",
     ],
     "Population and energy": [
         "env.agent_lifespan", "env.energy_death", "env.energy_upkeep", "env.init_agents",
@@ -98,7 +98,7 @@ GROUPS = {
         "run.remote_api_enabled", "run.env_heartbeat", "run.allow_human_agents",
     ],
     "Run and output": [
-        "run.runner_class", "run.scenario", "run.scenario_options", "run.ckpt_interval",
+        "run.runner_class", "run.scenario", "run.scenario_options", "run.mechanics", "run.ckpt_interval",
         "run.empty_countdown", "run.exp_description", "run.exp_name",
         "run.live_render", "run.max_ts", "run.save_video", "run.video_fps",
         "run.seed",
@@ -118,6 +118,7 @@ APPLICABILITY = {
     "env.food_zones": ({"not": SOCIAL}, "Requires a spatial world with natural or manually injected food."),
     "env.static_food": ({"not": SOCIAL}, "Requires a spatial world with natural or manually injected food."),
     "env.two_parent_spawn": (REPRODUCTION, "Requires reproduction."),
+    "agent.inherited_model": (REPRODUCTION, "Requires reproduction."),
     "env.genome_mutation_rate": (
         every(REPRODUCTION, when("agent.genome", enum=["ocean_5", "sentence_mutate"])),
         "Requires reproduction with a genome that mutates.",
@@ -134,8 +135,6 @@ APPLICABILITY = {
     "env.grid_size": (GRID, "Requires a grid world."),
     "env.vision_radius": (GRID, "Requires a grid world."),
     "env.allow_fixed_artifacts": (AUTHORING, "Requires artifact creation."),
-    "env.use_library": (SOCIAL, "Requires a social graph."),
-    "env.library_preview": (every(LIBRARY, when("env.inert_artifacts", const=False)), "Requires an active social graph library."),
     **{
         path: (GRAPH, "Requires a graph or social graph world.")
         for path in (
@@ -178,7 +177,7 @@ APPLICABILITY = {
         path: (SOCIAL, "Requires a social graph.")
         for path in (
             "env.graph.max_connections", "env.graph.edge_decay_steps",
-            "env.graph.random_intro_k", "env.graph.direct_message_cost",
+            "env.graph.random_intro_k",
             "env.graph.allow_follow", "env.graph.allow_connection",
         )
     },
@@ -226,7 +225,6 @@ NOTES = {
         "Failed attempts consume the base cost. Additional gifts are charged only on success."
     ),
     "agent.max_history": "History length is independent of internal memory.",
-    "env.use_library": "Library access does not require artifact creation or inventory.",
     "env.graph.agent_network_hocon_path": (
         "This path selects the agent-network topology and a graph world."
     ),
@@ -256,6 +254,11 @@ DERIVED_DEPENDENCIES = {
 
 # These descriptions document Pydantic's authoritative validators.
 CONSTRAINTS = [
+    {
+        "id": "model_assignment_size",
+        "fields": ["agent.model_assignment", "env.init_agents", "env.graph.agent_network_hocon_path"],
+        "description": "Assigned model counts must fit the starting LLM population, including when a HOCON file supplies the roster.",
+    },
     {
         "id": "social_food",
         "fields": ["env.world_type", "env.food_mechanism"],

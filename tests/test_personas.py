@@ -19,12 +19,12 @@ def write(tmp_path, data):
 
 def test_entries_expand_by_count_in_file_order(tmp_path):
     path = write(tmp_path, [
-        {"persona": "You heal.", "name": "Ada"},
+        {"persona": "You heal.", "name": "Ada", "role": "healer"},
         {"persona": "You farm.", "count": 2, "name": "Bo"},
         "You doubt.",
     ])
     assert load_personas(path) == [
-        {"persona": "You heal.", "name": "Ada"},
+        {"persona": "You heal.", "name": "Ada", "role": "healer"},
         {"persona": "You farm."},
         {"persona": "You farm."},
         {"persona": "You doubt."},
@@ -49,12 +49,20 @@ def test_bad_files_are_refused(tmp_path, data):
 
 
 class StubWorld:
-    def __init__(self, answers=None, names=()):
+    """A world with scripted identity answers; `completions` plays the mechanics' on_identity."""
+
+    def __init__(self, answers=None, names=(), completions=None):
         self.answers = answers or {}
         self.agent_names = {f"old{i}": name for i, name in enumerate(names)}
+        self.completions = completions or {}
+        self.settled = []
 
     def agent_identity(self, tag):
         return dict(self.answers.get(tag, {}))
+
+    def agent_identity_settled(self, tag, identity):
+        self.settled.append((tag, dict(identity)))
+        return {**identity, **self.completions}
 
 
 def make_runner(personas, world):
@@ -91,6 +99,14 @@ def test_the_file_name_does_not_replace_a_scenario_name():
 def test_a_name_already_in_use_is_not_applied():
     runner = make_runner([{"persona": "You farm.", "name": "Ada"}], StubWorld(names=["Ada"]))
     assert runner._identity_for("being0") == {"persona": "You farm."}
+
+
+def test_other_keys_of_an_entry_travel_with_the_persona_and_mechanics_complete_it():
+    world = StubWorld(completions={"color": "red"})
+    runner = make_runner([{"persona": "You heal.", "role": "healer"}], world)
+    assert runner._identity_for("being0") == {"persona": "You heal.", "role": "healer", "color": "red"}
+    assert world.settled == [("being0", {"persona": "You heal.", "role": "healer"})]
+    assert runner._identity_for("being1") == {"color": "red"}
 
 
 @pytest.mark.asyncio

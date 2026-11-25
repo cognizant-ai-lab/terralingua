@@ -47,7 +47,7 @@ If a reply is JSON with a `"reward"` field, the runner turns it into energy: `en
 - `independent`: every call goes to the server on its own. The reward is credited to the caller.
 - `unanimous`: beings that act on the same target (the requests with the same `vote_key` value) must agree. One action per target is elected by plurality and sent; the other callers do nothing that step and are told which action won. The reward is shared across the beings that voted for it, weighted by the DIAS rule, which divides it by the number of voters and normalises it against the target's recent rewards.
 
-A run stops early when a reply carries a truthy `solved` or `done` field and `run.stop_on_external_solved` is on.
+A run stops early when a reply carries a truthy `solved`, `done`, or `terminated` field and `run.stop_on_external_solved` is on.
 
 ## Writing a server
 

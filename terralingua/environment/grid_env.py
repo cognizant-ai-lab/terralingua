@@ -48,8 +48,6 @@ class OpenGridWorld(BaseWorld):
         log_path: Path | str | None = None,
         drop_food_on_death: bool = True,
         use_inventory: bool = False,
-        use_library: bool = False,
-        library_preview: bool = True,
         allow_fixed_artifacts: bool = True,
         max_artifact_tokens: int = MAX_TEXT_ARTIFACT_SIZE,
         use_colors: bool = False,
@@ -70,8 +68,10 @@ class OpenGridWorld(BaseWorld):
         excluded_actions: List[str] | None = None,
         headless: bool = False,
         max_message_length: int = 200,
+        allow_broadcasts: bool = True,
         roles_hocon_path: str | None = None,
         affordances_file_path: str | None = None,
+        offspring_model_choices: tuple[str, ...] = (),
     ):
         super().__init__(
             init_agent_energy=init_agent_energy,
@@ -84,12 +84,11 @@ class OpenGridWorld(BaseWorld):
             log_path=log_path,
             drop_food_on_death=drop_food_on_death,
             use_inventory=use_inventory,
-            use_library=use_library,
-            library_preview=library_preview,
             allow_fixed_artifacts=allow_fixed_artifacts,
             max_artifact_tokens=max_artifact_tokens,
             use_colors=use_colors,
             reproduction_cost=reproduction_cost,
+            offspring_model_choices=offspring_model_choices,
             artifact_creation_cost=artifact_creation_cost,
             two_parent_spawn=two_parent_spawn,
             max_agents=max_agents,
@@ -106,6 +105,7 @@ class OpenGridWorld(BaseWorld):
             excluded_actions=excluded_actions,
             headless=headless,
             max_message_length=max_message_length,
+            allow_broadcasts=allow_broadcasts,
             exclusive_pos_occupancy=True,
             roles_hocon_path=roles_hocon_path,
             affordances_file_path=affordances_file_path,
@@ -211,8 +211,6 @@ class OpenGridWorld(BaseWorld):
         return new_pose, infos
 
     def _get_food_distribution(self):
-        if self.rng is None:
-            self.rng = np.random.default_rng()
 
         if self.food_zones is None:
             density = np.full((self.grid_size, self.grid_size), 1 / self.grid_size**2)
@@ -283,8 +281,6 @@ class OpenGridWorld(BaseWorld):
             and not self.pos_to_agent[p]
         ]
         if free_cells:
-            if self.rng is None:
-                self.rng = np.random.default_rng()
             p = free_cells[int(self.rng.integers(0, len(free_cells)))]
             return (p[0], p[1])
         else:
@@ -292,8 +288,6 @@ class OpenGridWorld(BaseWorld):
 
     def _random_free_pos(self):
         """Find a random position in the grid that is not occupied by any agent."""
-        if self.rng is None:
-            self.rng = np.random.default_rng()
         while True:
             p = tuple(int(v) for v in self.rng.integers(1, self.grid_size - 1, size=2))
             if not self.pos_to_agent[p]:
@@ -336,8 +330,6 @@ class OpenGridWorld(BaseWorld):
                 self.food[p] = food_value
 
     def _seed_initial_food(self):
-        if self.rng is None:
-            self.rng = np.random.default_rng()
 
         density = self._get_food_distribution()
 
@@ -436,6 +428,7 @@ class OpenGridWorld(BaseWorld):
             "incoming_broadcasts": messages,
             "energy": self.agent_energy[agent],
             "time": self.agent_time[agent],
+            "lifespan": self.agent_lifespan[agent],
             "inventory": inventory_list,
             "vision_radius": self.vision_radius,  # Passing it here as this can change
         }

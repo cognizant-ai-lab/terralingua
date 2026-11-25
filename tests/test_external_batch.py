@@ -106,7 +106,10 @@ def _runner_self(batch: bool):
         },
         voting_managers={"world": IndependentVotingManager(DirectRewards(0.0))},
         _stay_action={"action": "noop", "params": {}},
-        env=types.SimpleNamespace(rng=None),
+        env=types.SimpleNamespace(
+            rng=None, agent_energy={"a1": 100, "a2": 100},
+            external_action_error=lambda tag, action, params: None,
+        ),
     )
     return fs, manager
 

@@ -77,7 +77,7 @@ class TestConditionalBlocks:
 
     def test_food_section_absent_when_disabled(self):
         text = render_system_prompt("grid.j2", **_default_kwargs(food_mechanism=False))
-        # The phrase "You lose 1 energy at each turn" only appears in the
+        # The phrase "You lose 1 energy at each step" only appears in the
         # food/energy block; absent when food_mechanism is False.
         assert "lose 1 energy" not in text
 
@@ -156,7 +156,7 @@ class TestSocialGraphConfiguration:
             )
             assert text.count(marker) == 1
             assert f"limited to {message_limit} tokens" in text
-            assert f"within {memory_limit} tokens" in text
+            assert f"the {memory_limit} token limit" in text
             other_marker = (
                 "Second scenario instructions"
                 if marker.startswith("First")
@@ -315,12 +315,12 @@ def _agent_prompt_kwargs(**overrides):
 class TestSoloAgentPrompt:
     def test_message_field_present_by_default(self):
         text = AGENT_PROMPT.render(**_agent_prompt_kwargs())
-        assert '"message"' in text
+        assert '"messages"' in text
         assert "Incoming messages:" in text
 
     def test_solo_drops_message_field_and_incoming_section(self):
         text = AGENT_PROMPT.render(**_agent_prompt_kwargs(solo=True))
-        assert '"message"' not in text
+        assert '"messages"' not in text
         assert "Incoming messages:" not in text
         assert '"action"' in text
         assert '"params"' in text
@@ -332,7 +332,7 @@ class TestSoloAgentPrompt:
             use_internal_memory=False,
             solo=True,
         )
-        assert '"message"' not in text
+        assert '"messages"' not in text
         assert '"action"' in text
 
 

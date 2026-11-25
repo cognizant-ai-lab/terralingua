@@ -9,6 +9,7 @@ from terralingua.environment.graph_builder import build_graph
 from terralingua.environment.graph_env import OpenGraphWorld
 from terralingua.environment.grid_env import OpenGridWorld
 from terralingua.environment.social_graph_env import OpenSocialGraphWorld
+from terralingua.mechanics.library import Library, Options
 
 
 def make_world(kind, tmp_path):
@@ -25,6 +26,8 @@ def make_world(kind, tmp_path):
         cls = OpenSocialGraphWorld if kind == "social" else OpenGraphWorld
         env = cls(graph_cfg=GraphConfig.complete(n_nodes=3), **options)
         position = "0"
+        if kind == "social":
+            env.attach(Library(Options()))
     env.add_agent("a", "Alice", "no_traits", position=position)
     env.restart_env(seed=10, agent_poses={"a": position})
     return env
@@ -37,7 +40,7 @@ def world(request, tmp_path):
 def create(world, **params):
     world._get_avail_actions("a")
     return world.step({"a": {
-        "action": "create_artifact", "message": "",
+        "action": "create_artifact", "messages": {},
         "params": {"name": "note", "type": "text", "payload": "hello",
                    "lifespan": -1, **params},
     }})[4]["a"]
@@ -81,7 +84,7 @@ def test_energy_transfer_does_not_depend_on_food(tmp_path, kind, food, action):
     world.add_agent("b", "Bob", "no_traits", position=position)
     actions = world._get_avail_actions("a")
     assert action in actions
-    info = world.step({"a": {"action": action, "message": "",
+    info = world.step({"a": {"action": action, "messages": {},
                              "params": {"target": "Bob", "amount": 7}}})[4]
     delta = -7 if action == "give" else 7
     assert world.agent_energy["a"] == 100 + delta - int(food)
@@ -89,13 +92,12 @@ def test_energy_transfer_does_not_depend_on_food(tmp_path, kind, food, action):
     assert "Action error" not in info["a"]
 
 
-def social(tmp_path, cost=7):
+def social(tmp_path):
     env = OpenSocialGraphWorld(
-        graph_cfg=GraphConfig.complete(n_nodes=3, direct_message_cost=cost),
+        graph_cfg=GraphConfig.complete(n_nodes=3),
         food_mechanism=False, energy_death=False, init_food=0,
         food_spawn_rate=0, food_decay_rate=0, init_agent_energy=100,
-        lifespan=200, headless=True, log_path=tmp_path,
-        use_library=True, library_preview=True, use_inventory=True,
+        lifespan=200, headless=True, log_path=tmp_path, use_inventory=True,
     )
     for tag, name, pos in [("a", "Alice", "0"), ("b", "Bob", "1")]:
         env.add_agent(tag, name, "no_traits", position=pos)
@@ -103,68 +105,27 @@ def social(tmp_path, cost=7):
     return env
 
 
-@pytest.mark.parametrize("cost", [0, 7])
-def test_direct_message_fee_and_delivery_work_without_natural_food(tmp_path, cost):
-    env = social(tmp_path, cost)
-    action = env.agent_avail_actions["a"]["send_direct_message"]
-    assert ("Costs" in action["description"]) is bool(cost)
-    obs, _, _, _, infos = env.step({"a": {"action": "send_direct_message", "message": "",
-        "params": {"target": "Bob", "content": "private"}}})
-    assert infos["a"]["send_direct_message"]["status"] == "successful"
-    assert env.agent_energy["a"] == 100 - cost
+def test_private_message_is_delivered_without_natural_food(tmp_path):
+    env = social(tmp_path)
+    obs, _, _, _, infos = env.step({"a": {"action": "noop", "messages": {"Bob": "private"}, "params": {}}})
+    assert "Message delivery" not in infos["a"]
+    assert env.agent_energy["a"] == 100
     assert obs["b"]["incoming_dms"] == {"Alice": "private"}
+    assert obs["b"]["incoming_broadcasts"] == {}
 
 
-def test_direct_message_rechecks_affordability_without_charging_or_delivering(tmp_path):
-    env = social(tmp_path)
-    assert "send_direct_message" in env.agent_avail_actions["a"]
-    env.agent_energy["a"] = 6
-    obs, _, _, _, infos = env.step({"a": {"action": "send_direct_message", "message": "",
-        "params": {"target": "Bob", "content": "private"}}})
-    assert infos["a"]["send_direct_message"]["status"] == "failed"
-    assert env.agent_energy["a"] == 6
-    assert not obs["b"]["incoming_dms"]
-    assert "send_direct_message" not in env.agent_avail_actions["a"]
-    env.direct_message_cost = 0
-    env.agent_energy["a"] = -1
-    assert "send_direct_message" in env._get_avail_actions("a")
-
-
-def test_inert_library_lists_names_without_content_or_transfer_actions(tmp_path):
-    env = social(tmp_path)
-    env.seed_artifact("0", "text", "private_recipe", "secret recipe text", -1)
-    infos = {"a": {}}
-    env._handle_deposit_artifact("a", {"name": "private_recipe"}, infos)
-    env.seed_artifact("0", "text", "public_note", "another secret", -1)
-    env.inert_artifacts = True
-    actions = env._get_avail_actions("a")
-    assert "show_library_content" in actions
-    for action in ("read_artifact", "deposit_artifact", "retrieve_artifact", "pickup_artifact"):
-        assert action not in actions
-    info = env.step({"a": {"action": "show_library_content", "message": "", "params": {}}})[4]["a"]
-    assert "private_recipe" in info["Library content"]
-    assert "secret recipe" not in info["Library content"]
-    assert "preview" not in actions["show_library_content"]["description"].lower()
-    assert "cannot be read or transferred" in env._build_obs("a")[0]["observation_text"]
-    # Inert mode must not discard the independent library death-persistence rule.
-    env._kill("a")
-    assert "public_note" in env.library
-
-
-@pytest.mark.parametrize("action", ["read_artifact", "deposit_artifact", "retrieve_artifact"])
-def test_inert_library_rejects_a_previously_cached_action(tmp_path, action):
-    env = social(tmp_path)
-    env.seed_artifact("0", "text", "note", "secret", -1)
-    if action != "deposit_artifact":
-        env._handle_deposit_artifact("a", {"name": "note"}, {"a": {}})
-    env._get_avail_actions("a")
-    assert action in env.agent_avail_actions["a"]
-    before = env.artifact_location["note"]
-    env.inert_artifacts = True
-    info = env.step({"a": {"action": action, "message": "", "params": {"name": "note"}}})[4]["a"]
-    assert "inert" in info["Action outcome"]
-    assert "secret" not in str(info)
-    assert env.artifact_location["note"] == before
+@pytest.mark.parametrize("kind", ["grid", "graph", "social"])
+def test_messages_reach_the_same_beings_in_every_world(tmp_path, kind):
+    world = make_world(kind, tmp_path)
+    position = (2, 3) if isinstance(world, OpenGridWorld) else "1"
+    world.add_agent("b", "Bob", "no_traits", position=position)
+    obs, _, _, _, infos = world.step(
+        {"a": {**world.stay_action, "messages": {"broadcast": "hello", "Bob": "psst"}}}
+    )
+    assert obs["b"]["incoming_broadcasts"] == {"Alice": "hello"}
+    assert obs["b"]["incoming_dms"] == {"Alice": "psst"}
+    assert obs["a"]["incoming_dms"] == {}
+    assert "Message delivery" not in infos["a"]
 
 
 @pytest.mark.parametrize("kind", ["grid", "graph"])
@@ -297,8 +258,58 @@ def test_artifact_cost_controls_creation_without_food(world, cost):
 def test_stale_artifact_menu_cannot_bypass_disabled_creation(world):
     assert "create_artifact" in world.agent_avail_actions["a"]
     world.artifact_creation_cost = -1
-    world.step({"a": {"action": "create_artifact", "message": "", "params": {
+    world.step({"a": {"action": "create_artifact", "messages": {}, "params": {
         "name": "stale", "type": "text", "payload": "hello", "lifespan": 100, "movable": True,
     }}})
     assert not world.artifacts
     assert world.agent_energy["a"] == 100
+
+
+def test_inert_library_lists_names_without_content_or_transfer_actions(tmp_path):
+    env = social(tmp_path)
+    library = Library(Options())
+    env.attach(library)
+    env.seed_artifact("0", "text", "private_recipe", "secret recipe text", -1)
+    library.deposit_artifact(env, "a", {"name": "private_recipe"})
+    env.seed_artifact("0", "text", "public_note", "another secret", -1)
+    env.inert_artifacts = True
+    actions = env._get_avail_actions("a")
+    assert "show_library_content" in actions
+    for action in ("read_artifact", "deposit_artifact", "retrieve_artifact", "pickup_artifact"):
+        assert action not in actions
+    info = env.step({"a": {"action": "show_library_content", "messages": {}, "params": {}}})[4]["a"]
+    assert "private_recipe" in info["Action outcome"]
+    assert "secret recipe" not in info["Action outcome"]
+    assert "preview" not in actions["show_library_content"]["description"].lower()
+    # Inert mode must not discard the independent library death-persistence rule.
+    env._kill("a")
+    assert "public_note" in library.stored(env)
+
+
+
+@pytest.mark.parametrize("action", ["read_artifact", "deposit_artifact", "retrieve_artifact"])
+def test_inert_library_rejects_a_previously_cached_action(tmp_path, action):
+    env = social(tmp_path)
+    library = Library(Options())
+    env.attach(library)
+    env.seed_artifact("0", "text", "note", "secret", -1)
+    if action != "deposit_artifact":
+        library.deposit_artifact(env, "a", {"name": "note"})
+    env._get_avail_actions("a")
+    assert action in env.agent_avail_actions["a"]
+    before = env.artifact_location["note"]
+    env.inert_artifacts = True
+    info = env.step({"a": {"action": action, "messages": {}, "params": {"name": "note"}}})[4]["a"]
+    assert "inert" in info["Action outcome"]
+    assert "secret" not in str(info)
+    assert env.artifact_location["note"] == before
+
+
+
+def test_private_message_has_no_energy_fee(tmp_path):
+    env = social(tmp_path)
+    env.agent_energy["a"] = 0
+    obs, _, _, _, infos = env.step({"a": {"action": "noop", "messages": {"Bob": "private"}, "params": {}}})
+    assert env.agent_energy["a"] == 0
+    assert obs["b"]["incoming_dms"] == {"Alice": "private"}
+    assert "Message delivery" not in infos["a"]

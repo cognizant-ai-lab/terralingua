@@ -68,11 +68,98 @@ class TestCacheSystemMessages:
         msgs = [{"role": "user", "content": "hi"}]
         assert _cache_system_messages(msgs) == msgs
 
-    def test_already_list_content_not_double_wrapped(self):
+    def test_block_content_is_marked_without_mutating_original(self):
         content = [{"type": "text", "text": "hi"}]
         msgs = [{"role": "system", "content": content}]
         result = _cache_system_messages(msgs)
-        assert result[0]["content"] is content
+        assert result[0]["content"] == [
+            {**content[0], "cache_control": {"type": "ephemeral"}}
+        ]
+        assert content == [{"type": "text", "text": "hi"}]
+
+
+def test_openai_cache_breakpoint_reaches_http_request():
+    """Exercise LiteLLM's real serializer, not only our wrapper's kwargs."""
+    import json
+
+    import httpx
+    from openai import OpenAI
+
+    sent = []
+
+    def handle(request):
+        sent.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-cache-test",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "gpt-6.1-terra",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "{}"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1200,
+                    "completion_tokens": 2,
+                    "total_tokens": 1202,
+                    "prompt_tokens_details": {
+                        "cached_tokens": 1024,
+                        "cache_write_tokens": 0,
+                    },
+                },
+            },
+        )
+
+    messages = [
+        {"role": "system", "content": "stable rules"},
+        {"role": "user", "content": "fresh observation"},
+    ]
+    with OpenAI(
+        api_key="test", http_client=httpx.Client(transport=httpx.MockTransport(handle))
+    ) as client:
+        response = AgentClient(client=client).get_response(
+            messages,
+            {
+                "model": "openai/gpt-6.1-terra",
+                "response_format": {"type": "json_object"},
+            },
+        )
+    assert sent[0]["prompt_cache_options"] == {"mode": "explicit", "ttl": "30m"}
+    assert sent[0]["messages"][0]["content"][0]["prompt_cache_breakpoint"] == {
+        "mode": "explicit"
+    }
+    assert sent[0]["messages"][1] == messages[1]
+    assert messages[0]["content"] == "stable rules"
+    assert response.cached_input_tokens == 1024
+    assert response.cache_write_input_tokens == 0
+
+
+@pytest.mark.parametrize("model", ["gpt-4o", "o4-mini"])
+def test_older_openai_models_keep_their_existing_cache_behavior(model):
+    messages = [
+        {"role": "system", "content": "stable"},
+        {"role": "user", "content": "new"},
+    ]
+    kwargs = AgentClient()._build_kwargs(messages, {"model": model})
+    assert kwargs["messages"] == messages
+    assert "prompt_cache_options" not in kwargs
+
+
+def test_missing_cache_usage_remains_unknown():
+    from litellm import ModelResponse
+
+    from terralingua.utils.llm_client import _cache_usage
+
+    response = ModelResponse(usage={"prompt_tokens": 1200, "completion_tokens": 2})
+    assert _cache_usage(response) == {
+        "cached_input_tokens": None,
+        "cache_write_input_tokens": None,
+    }
 
 
 # ---------------------------------------------------------------------------

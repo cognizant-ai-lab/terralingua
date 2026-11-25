@@ -28,7 +28,7 @@ from terralingua.server.redis_bus import (
 
 logger = logging.getLogger(__name__)
 
-_STAY_ACTION = {"action": "move", "message": "", "params": {"direction": "stay"}}
+_STAY_ACTION = {"action": "move", "messages": {}, "params": {"direction": "stay"}}
 
 
 class RedisConnectionManager:

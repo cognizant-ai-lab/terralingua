@@ -6,8 +6,8 @@ edges represent a **directional** social network:
 - Each initial agent is placed on a distinct node of the topology built by
   `graph_cfg` (so `n_nodes == init_agents` and the topology defines the
   starting social network).
-- Edges are single directional links. `A → B` means: A is subscribed to B's
-  broadcasts AND A can direct-message B. The reverse `B → A` is independent.
+- Edges are single directional links. `A → B` means: A receives B's
+  broadcasts and A can send B private messages. The reverse `B → A` is independent.
 - Agents cannot move (`_apply_move` is a no-op; `move` is not in available
   actions; `noop` is the no-op alternative).
 - A new agent born via `spawn` adds a new node connected to its parent(s) by a
@@ -36,22 +36,15 @@ from itertools import count
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
-import numpy as np
-
 from terralingua.config.models import GraphConfig
 from terralingua.environment.actions import (
     LocationAffordance,
     build_accept_connection_action,
-    build_deposit_artifact_action,
-    build_direct_message_action,
     build_disconnect_action,
     build_follow_action,
     build_noop_action,
-    build_read_artifact_action,
     build_reject_connection_action,
     build_request_connection_action,
-    build_retrieve_artifact_action,
-    build_show_library_action,
     describe_social_actions,
 )
 from terralingua.environment.artifact import MAX_TEXT_ARTIFACT_SIZE
@@ -60,7 +53,6 @@ from terralingua.environment.graph_env import OpenGraphWorld
 
 log = logging.getLogger(__name__)
 
-_LIBRARY_PREVIEW_CHARS = 120
 
 # Abilities a manager may grant to / revoke from a connected agent via the
 # grant_ability / revoke_ability affordances. Each spec is the affordance
@@ -93,7 +85,7 @@ GRANTABLE_ABILITY_SPECS: Dict[str, dict] = {
         "description": "Grant an ability to an agent you are connected to (or restore one you revoked).",
         "params": {
             "target": "Name of an agent you are connected to.",
-            "ability": "Ability to grant: a manager power (remove_agent, set_role, grant_ability, revoke_ability) or a standard action you previously revoked (e.g. follow, spawn, send_direct_message).",
+            "ability": "Ability to grant: a manager power (remove_agent, set_role, grant_ability, revoke_ability) or a standard action you previously revoked (e.g. follow, spawn, give).",
         },
         "effect": {"type": "grant_ability"},
     },
@@ -103,7 +95,7 @@ GRANTABLE_ABILITY_SPECS: Dict[str, dict] = {
         "description": "Revoke an ability from an agent you are connected to.",
         "params": {
             "target": "Name of an agent you are connected to.",
-            "ability": "Ability to revoke: a manager power (remove_agent, set_role, grant_ability, revoke_ability) or a standard action (e.g. follow, spawn, send_direct_message).",
+            "ability": "Ability to revoke: a manager power (remove_agent, set_role, grant_ability, revoke_ability) or a standard action (e.g. follow, spawn, give).",
         },
         "effect": {"type": "revoke_ability"},
     },
@@ -119,7 +111,6 @@ REVOCABLE_GLOBAL_ACTIONS: Set[str] = {
     "accept_connection",
     "reject_connection",
     "disconnect",
-    "send_direct_message",
     "give",
     "take",
     "give_artifact",
@@ -134,11 +125,12 @@ class OpenSocialGraphWorld(OpenGraphWorld):
 
     system_prompt_template = "social_graph.j2"
     _LOG_FILENAME = "open_social_graph_world.log"
+    out_of_reach_text = "you do not follow {name}."
 
     @property
     def stay_action(self) -> dict:
         # Agents can't move here; `noop` is the pass-the-turn action.
-        return {"action": "noop", "message": "", "params": {}}
+        return {"action": "noop", "messages": {}, "params": {}}
 
     def __init__(
         self,
@@ -153,8 +145,6 @@ class OpenSocialGraphWorld(OpenGraphWorld):
         log_path: Path | str | None = None,
         drop_food_on_death: bool = True,
         use_inventory: bool = False,
-        use_library: bool = True,
-        library_preview: bool = True,
         allow_fixed_artifacts: bool = True,
         max_artifact_tokens: int = MAX_TEXT_ARTIFACT_SIZE,
         use_colors: bool = False,
@@ -175,8 +165,10 @@ class OpenSocialGraphWorld(OpenGraphWorld):
         excluded_actions: List[str] | None = None,
         headless: bool = False,
         max_message_length: int = 200,
+        allow_broadcasts: bool = True,
         roles_hocon_path: str | None = None,
         affordances_file_path: str | None = None,
+        offspring_model_choices: tuple[str, ...] = (),
     ):
         if food_mechanism:
             raise ValueError(
@@ -195,12 +187,11 @@ class OpenSocialGraphWorld(OpenGraphWorld):
             log_path=log_path,
             drop_food_on_death=drop_food_on_death,
             use_inventory=use_inventory,
-            use_library=use_library,
-            library_preview=library_preview,
             allow_fixed_artifacts=allow_fixed_artifacts,
             max_artifact_tokens=max_artifact_tokens,
             use_colors=use_colors,
             reproduction_cost=reproduction_cost,
+            offspring_model_choices=offspring_model_choices,
             artifact_creation_cost=artifact_creation_cost,
             two_parent_spawn=two_parent_spawn,
             max_agents=max_agents,
@@ -217,6 +208,7 @@ class OpenSocialGraphWorld(OpenGraphWorld):
             excluded_actions=excluded_actions,
             headless=headless,
             max_message_length=max_message_length,
+            allow_broadcasts=allow_broadcasts,
             roles_hocon_path=roles_hocon_path,
             affordances_file_path=affordances_file_path,
         )
@@ -230,7 +222,6 @@ class OpenSocialGraphWorld(OpenGraphWorld):
         self.random_intro_k = graph_cfg.random_intro_k
         self.max_connections = graph_cfg.max_connections
         self.edge_decay_steps = graph_cfg.edge_decay_steps
-        self.direct_message_cost = graph_cfg.direct_message_cost
         self.allow_follow = graph_cfg.allow_follow
         self.allow_connection = graph_cfg.allow_connection
         self.connection_request_lifespan = graph_cfg.connection_request_lifespan
@@ -253,12 +244,6 @@ class OpenSocialGraphWorld(OpenGraphWorld):
         #   _pending_incoming: target_tag -> {sender_tag, ...}  (fast obs lookup)
         self._pending_outgoing: Dict[str, Dict[str, int]] = {}
         self._pending_incoming: Dict[str, Set[str]] = {}
-
-        # Per-step private DM mailbox: recipient_tag -> {sender_name: content}.
-        # Populated by _handle_direct_message during dispatch, read by
-        # _build_obs to surface in obs["incoming_dms"], then cleared at the
-        # start of the next step() so each DM is visible for exactly one step.
-        self._pending_dms: Dict[str, Dict[str, str]] = {}
 
         # Manager-assigned role/objective overlay per agent, surfaced in obs.
         #   agent_tag -> {"role": str, "motivation": str}
@@ -302,8 +287,6 @@ class OpenSocialGraphWorld(OpenGraphWorld):
         at runtime without going through the spawn handler), create a new
         isolated node so the env doesn't loop forever looking for free space.
         """
-        if self.rng is None:
-            self.rng = np.random.default_rng()
         all_nodes = self.world_graph.all_nodes()
         free_nodes = [n for n in all_nodes if not self.pos_to_agent.get(n)]
         if free_nodes:
@@ -372,11 +355,24 @@ class OpenSocialGraphWorld(OpenGraphWorld):
         names = [self._node_owner_name(n) for n in self.world_graph.neighbors(node)]
         return sorted(n for n in names if n)
 
+    def audience_of(self, agent_tag: str) -> List[str]:
+        """Tags of the beings that follow `agent_tag`: they receive its broadcasts."""
+        node = self.agent_pos.get(agent_tag)
+        if node is None:
+            return []
+        return sorted(
+            tag
+            for other in self.world_graph.predecessors(node)
+            for tag in self.pos_to_agent.get(other, set())
+        )
+
+    def on_private_message(self, sender: str, target: str) -> None:
+        """A private message keeps the sender's link to the receiver active."""
+        self._edge_last_active[(self.agent_pos[sender], self.agent_pos[target])] = self.step_count
+
     def _get_followers(self, agent_tag: str) -> List[str]:
         """Names of agents who follow A (A's incoming edges)."""
-        node = self.agent_pos[agent_tag]
-        names = [self._node_owner_name(n) for n in self.world_graph.predecessors(node)]
-        return sorted(n for n in names if n)
+        return sorted(self.agent_names[tag] for tag in self.audience_of(agent_tag))
 
     def _get_bilateral_names(self, agent_tag: str) -> List[str]:
         """Names of agents mutually connected to A (both A→B and B→A)."""
@@ -450,28 +446,6 @@ class OpenSocialGraphWorld(OpenGraphWorld):
         if action_name == "disconnect":
             self._handle_disconnect(agent, action_params, infos)
             return True
-        if action_name == "send_direct_message":
-            self._handle_direct_message(agent, action_params, infos)
-            return True
-        if self.inert_artifacts and action_name in (
-            "deposit_artifact", "retrieve_artifact", "read_artifact",
-        ):
-            infos[agent]["Action outcome"] = (
-                "Failed. Artifacts are inert and cannot be read or transferred."
-            )
-            return True
-        if action_name == "show_library_content":
-            self._handle_show_library(agent, infos)
-            return True
-        if action_name == "deposit_artifact":
-            self._handle_deposit_artifact(agent, action_params, infos)
-            return True
-        if action_name == "retrieve_artifact":
-            self._handle_retrieve_artifact(agent, action_params, infos)
-            return True
-        if action_name == "read_artifact":
-            self._handle_read_artifact(agent, action_params, infos)
-            return True
         # Energy / artifact transfers require a MUTUAL connection. The base
         # handlers only check one-way adjacency, so we enforce bilaterality here
         # and otherwise fall through to the base handler (return False).
@@ -516,182 +490,6 @@ class OpenSocialGraphWorld(OpenGraphWorld):
             "other)."
         )
         return True
-
-    # ---------- library (shared commons) ----------
-    def _artifact_preview(self, art_name: str) -> str:
-        text = str(self.artifacts[art_name].payload).replace("\n", " ").strip()
-        if len(text) > _LIBRARY_PREVIEW_CHARS:
-            text = text[:_LIBRARY_PREVIEW_CHARS].rstrip() + "…"
-        return text
-
-    def _depositable_artifacts(self, agent: str) -> List[str]:
-        pose = self.agent_pos[agent]
-        names = self.agent_inventories.get(agent, set()) | self.pos_artifacts.get(
-            pose, set()
-        )
-        return sorted(n for n in names if self.artifacts[n].movable)
-
-    def _handle_show_library(self, agent: str, infos: dict) -> None:
-        if not self.library:
-            infos[agent]["Library content"] = "The library is empty."
-            return
-        lines = []
-        for art_name in sorted(self.library):
-            art = self.artifacts[art_name]
-            entry = f"A({art.art_type}): {art.name}"
-            if self.library_preview and not self.inert_artifacts:
-                entry += f" — {self._artifact_preview(art_name)}"
-            lines.append(entry)
-        infos[agent]["Library content"] = (
-            f"Library ({len(self.library)} artifact(s)):\n" + "\n".join(lines)
-        )
-
-    def _handle_deposit_artifact(self, agent: str, params: dict, infos: dict) -> None:
-        art_name = params.get("name")
-        pose = self.agent_pos[agent]
-        in_inventory = art_name in self.agent_inventories.get(agent, set())
-        on_node = art_name in self.pos_artifacts.get(pose, set())
-
-        if art_name not in self.artifacts:
-            status = f"Failed. Artifact {art_name} does not exist"
-        elif not (in_inventory or on_node):
-            status = (
-                f"Failed. Artifact {art_name} is not among your public or private artifacts"
-            )
-        elif not self.artifacts[art_name].movable:
-            status = f"Failed. Artifact {art_name} is fixed and cannot be deposited"
-        else:
-            if in_inventory:
-                self.agent_inventories[agent].discard(art_name)
-            else:
-                self.pos_artifacts[pose].discard(art_name)
-            self.library.add(art_name)
-            self.artifacts[art_name].pose = "Library"
-            self.artifact_location[art_name] = ("library", None)
-            self.artifacts[art_name].users[agent].add(self.step_count)
-            status = "Success"
-
-        infos[agent]["Artifact deposit status"] = status
-        self.logger.log(
-            time=self.step_count,
-            event_type=Event.LIBRARY_DEPOSIT,
-            agent_tag=agent,
-            agent_name=self.agent_names[agent],
-            artifact_name=art_name,
-            status=status,
-        )
-
-    def _handle_retrieve_artifact(self, agent: str, params: dict, infos: dict) -> None:
-        art_name = params.get("name")
-        pose = self.agent_pos[agent]
-
-        if art_name not in self.library:
-            status = f"Failed. No artifact with name {art_name} in the library"
-        else:
-            self.library.discard(art_name)
-            self.pos_artifacts[pose].add(art_name)
-            self.artifacts[art_name].pose = pose
-            self.artifact_location[art_name] = ("map", pose)
-            self.artifacts[art_name].users[agent].add(self.step_count)
-            status = "Success"
-
-        infos[agent]["Artifact retrieve status"] = status
-        self.logger.log(
-            time=self.step_count,
-            event_type=Event.LIBRARY_RETRIEVE,
-            agent_tag=agent,
-            agent_name=self.agent_names[agent],
-            artifact_name=art_name,
-            status=status,
-            pose=pose,
-        )
-
-    def _handle_read_artifact(self, agent: str, params: dict, infos: dict) -> None:
-        """Read a library artifact's full content in place, without removing it."""
-        art_name = params.get("name")
-        if art_name not in self.library:
-            status = f"Failed. No artifact with name {art_name} in the library"
-            infos[agent]["Artifact read"] = status
-        else:
-            art = self.artifacts[art_name]
-            art.users[agent].add(self.step_count)
-            infos[agent]["Artifact read"] = (
-                f"Artifact {art_name} content: {art.payload}"
-            )
-            status = "Success"
-        self.logger.log(
-            time=self.step_count,
-            event_type=Event.LIBRARY_READ,
-            agent_tag=agent,
-            agent_name=self.agent_names[agent],
-            artifact_name=art_name,
-            status=status,
-        )
-
-    def _handle_direct_message(self, agent: str, params: dict, infos: dict) -> None:
-        target_name = params.get("target", "")
-        content = params.get("content", "")
-
-        target_tag = self.name_to_tag.get(target_name) if target_name else None
-        if target_tag is None or target_tag not in self.agent_registry:
-            infos[agent] = {
-                "send_direct_message": {
-                    "status": "failed",
-                    "reason": f"Target '{target_name}' not found.",
-                }
-            }
-            return
-        if target_tag == agent:
-            infos[agent] = {
-                "send_direct_message": {
-                    "status": "failed",
-                    "reason": "Cannot send a direct message to yourself.",
-                }
-            }
-            return
-
-        agent_node = self.agent_pos[agent]
-        target_node = self.agent_pos[target_tag]
-        # A→B must exist: you can only DM agents you follow. Code-enforced even
-        # if a hand-crafted action slips a non-followee target past the schema.
-        if not self.world_graph.has_edge(agent_node, target_node):
-            infos[agent] = {
-                "send_direct_message": {
-                    "status": "failed",
-                    "reason": (
-                        f"You don't follow '{target_name}'. You can only "
-                        "direct-message agents you follow."
-                    ),
-                }
-            }
-            return
-
-        # Recheck the balance: another action may have reduced it since the
-        # menu was built. Message fees are independent of food metabolism.
-        if self.direct_message_cost > 0:
-            if self.agent_energy[agent] < self.direct_message_cost:
-                infos[agent] = {
-                    "send_direct_message": {
-                        "status": "failed", "reason": "Not enough energy.",
-                    }
-                }
-                return
-            self.agent_energy[agent] -= self.direct_message_cost
-
-        # Route the content into the recipient's pending DM mailbox.
-        sender_name = self.agent_names[agent]
-        self._pending_dms.setdefault(target_tag, {})[sender_name] = content
-
-        # Bump the A→B edge's last-active timestamp — deliberate one-to-one
-        # interaction marks that direction of the edge as "really used".
-        self._edge_last_active[(agent_node, target_node)] = self.step_count
-
-        infos[agent] = {
-            "send_direct_message": {
-                "status": "successful",
-                "target": target_name,
-            }
-        }
 
     def bootstrap_follows(self, newcomer: str, parent: str | None = None) -> None:
         """Newborns must arrive heard: an agent with zero followers
@@ -1355,46 +1153,15 @@ class OpenSocialGraphWorld(OpenGraphWorld):
                 ]
             )
 
-        # send_direct_message: ≥1 agent followed AND can afford the cost.
-        if subscriptions:
-            can_afford_dm = (
-                self.direct_message_cost == 0
-                or self.agent_energy[agent_tag] >= self.direct_message_cost
-            )
-            if can_afford_dm:
-                actions.update(
-                    [
-                        build_direct_message_action(
-                            current_connections=subscriptions,
-                            direct_message_cost=self.direct_message_cost,
-                            finite_energy=bool(np.isfinite(self.agent_energy[agent_tag])),
-                        )
-                    ]
-                )
-
-        # Shared library (commons): list always available; read/retrieve when the
-        # library is non-empty; deposit when the agent holds a movable artifact.
-        # read_artifact = read content in place; retrieve_artifact = take it out to edit.
-        if self.use_library:
-            actions.update(
-                [build_show_library_action(
-                    len(self.library), self.library_preview and not self.inert_artifacts,
-                )]
-            )
-            if self.library and not self.inert_artifacts:
-                actions.update([build_read_artifact_action(sorted(self.library))])
-                actions.update([build_retrieve_artifact_action(sorted(self.library))])
-            depositable = self._depositable_artifacts(agent_tag)
-            if depositable and not self.inert_artifacts:
-                actions.update([build_deposit_artifact_action(depositable)])
-
         # give / take / give_artifact require a MUTUAL connection — restrict the
         # base-built actions to bilateral targets, or remove them entirely.
         self._gate_bilateral_actions(actions, self._get_bilateral_names(agent_tag))
         return actions
 
-    def _get_avail_actions(self, agent_tag: str, nearby_agents: bool | None = None) -> dict:
-        actions = super()._get_avail_actions(agent_tag, nearby_agents)
+    def _get_avail_actions(
+        self, agent_tag: str, nearby_agents: bool | None = None, *, cache: bool = True
+    ) -> dict:
+        actions = super()._get_avail_actions(agent_tag, nearby_agents, cache=cache)
         # Affordances are added after _build_avail_actions. Extend their final menu.
         if "set_role" in actions:
             schema = dict(actions["set_role"])
@@ -1409,7 +1176,8 @@ class OpenSocialGraphWorld(OpenGraphWorld):
             if self._roles:
                 schema["params"]["target"] = "Name of a persistent role whose temporary mandate you want to update."
             actions["set_role"] = schema
-        self.agent_avail_actions[agent_tag] = actions
+        if cache:
+            self.agent_avail_actions[agent_tag] = actions
         return actions
 
     def _gate_bilateral_actions(
@@ -1500,8 +1268,6 @@ class OpenSocialGraphWorld(OpenGraphWorld):
         obs["pending_outgoing_requests"] = self._get_pending_outgoing_targets(agent)
         obs["pending_incoming_requests"] = self._get_pending_incoming_senders(agent)
         obs["suggested_connections"] = self._suggest_agents(agent)
-        # Per-step private mailbox — separate from broadcasts.
-        obs["incoming_dms"] = self._pending_dms.get(agent, {})
         if not self._roles:
             self._stamp_legacy_directive_obs(agent, obs)
 
@@ -1535,8 +1301,7 @@ class OpenSocialGraphWorld(OpenGraphWorld):
         def fmt(names: List[str]) -> str:
             return ", ".join(names) if names else "<none>"
 
-        # Alone in the world there is no network state to act on; the
-        # shared-library line below still renders (it outlives agents).
+        # Alone in the world there is no network state to act on.
         if len(self.agent_registry) > 1:
             lines = [
                 "Your social network:",
@@ -1551,19 +1316,6 @@ class OpenSocialGraphWorld(OpenGraphWorld):
             ]
         else:
             lines = []
-        if self.use_library and self.inert_artifacts:
-            lines.append(
-                f"Shared library: {len(self.library)} artifact(s) — "
-                "show_library_content lists names only; artifacts are inert "
-                "and cannot be read or transferred."
-            )
-        elif self.use_library:
-            lines.append(
-                f"Shared library: {len(self.library)} artifact(s) — "
-                "show_library_content to list, read_artifact to read, "
-                "retrieve_artifact to retrieve for editing, deposit_artifact to add one "
-                "(deposited artifacts remain available until they expire or are retrieved)."
-            )
         return "\n".join(lines)
 
     def _suggest_agents(self, agent: str) -> List[str]:
@@ -1581,8 +1333,6 @@ class OpenSocialGraphWorld(OpenGraphWorld):
         k = min(self.random_intro_k, len(candidates))
         if k <= 0:
             return []
-        if self.rng is None:
-            self.rng = np.random.default_rng()
 
         two_hop_nodes = {
             target
@@ -1614,9 +1364,6 @@ class OpenSocialGraphWorld(OpenGraphWorld):
 
     # ---------- step / lifecycle ----------
     def step(self, actions):
-        # Clear last step's DMs before action dispatch — the mailbox holds
-        # only DMs sent during the step that's about to run.
-        self._pending_dms = {}
         # Expire stale pending requests (frees the sender's reserved slot).
         self._prune_expired_requests()
         out = super().step(actions)
@@ -1793,10 +1540,7 @@ class OpenSocialGraphWorld(OpenGraphWorld):
             self._cancel_pending(sender, agent)
         if node is None:
             return
-        # The node and its artifacts (the agent's dropped inventory plus anything
-        # already on the node) are about to disappear with the node — evacuate
-        # them first so culture is not lost.
-        self._evacuate_node_artifacts(node, agent)
+        self.pos_artifacts.pop(node, None)
         # Drop edge_last_active entries touching this node (either direction).
         for edge in list(self._edge_last_active.keys()):
             if node in edge:
@@ -1806,37 +1550,11 @@ class OpenSocialGraphWorld(OpenGraphWorld):
         # Food-spawn cache is keyed on the node set.
         self._food_spawn_nodes = None
 
-    def _evacuate_node_artifacts(self, node, agent: str) -> None:
-        """Move a dying node's artifacts to the library, or expire them.
-
-        When ``use_library`` is on the artifacts move to the shared commons and
-        survive the agent's death (until their lifespan ends). When off they are
-        expired cleanly so they never linger on a removed node.
-        """
-        for art_name in list(self.pos_artifacts.get(node, set())):
-            if self.use_library:
-                self.library.add(art_name)
-                self.artifacts[art_name].pose = "Library"
-                self.artifact_location[art_name] = ("library", None)
-                self.logger.log(
-                    time=self.step_count,
-                    event_type=Event.LIBRARY_DEPOSIT,
-                    agent_tag=agent,
-                    agent_name=self.agent_names.get(agent),
-                    artifact_name=art_name,
-                    status="Success",
-                    reason="owner_died",
-                )
-            else:
-                artifact = self.artifacts.pop(art_name, None)
-                self.artifact_location.pop(art_name, None)
-                if artifact is not None:
-                    artifact.deletion_time = self.step_count
-                    self.expired_artifacts.append(artifact)
-                    self.logger.log(
-                        time=self.step_count,
-                        event_type=Event.ARTIFACT_REMOVED,
-                        artifact=artifact.serialize(),
-                        reason="owner_died",
-                    )
-        self.pos_artifacts.pop(node, None)
+    def _doomed_artifacts(self, agent: str) -> List[str]:
+        """A dead being's node disappears with it. Its inventory and the artifacts
+        on the node are discarded unless a mechanic takes them."""
+        node = self.agent_pos.get(agent)
+        names = set(self.agent_inventories.get(agent, set()))
+        if node is not None:
+            names |= self.pos_artifacts.get(node, set())
+        return sorted(names)

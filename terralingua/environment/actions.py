@@ -4,7 +4,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Tuple
 
-from terralingua.environment.artifact import creatable_types
+from terralingua.environment.artifact import ARTIFACT_TYPES, creatable_types
 
 
 @dataclass
@@ -89,21 +89,22 @@ class LocationAffordance:
 
 
 # Base action templates - will be formatted with environment-specific parameters
-def create_artifact_text() -> dict:
+def create_artifact_text(available_types: dict | None = None) -> dict:
     """Menu text for create_artifact, listing the types agents may create now."""
-    types = creatable_types()
+    types = creatable_types() if available_types is None else available_types
+    payloads = {name: ARTIFACT_TYPES[name].payload_description for name in types}
     return {
-        "description": "Creates a new artifact at the being's location.",
+        "description": "Creates a new artifact.",
         "params": {
             "name": "The name of the artifact (use **unique** names)",
             "type": {
-                "description": "Type of the artifact to create.",
+                "description": f"Type of the artifact to create: {types}",
                 "choices": list(types),
             },
-            "payload": f"Content of the artifact. Depends on the artifact type: {types}",
+            "payload": f"Content for the selected artifact type: {payloads}",
             "lifespan": "How many time steps the artifact will last (in number of steps, integer > 0. If -1 the artifact will never disappear)",
             "movable": {
-                "description": "Whether other agents can pick up this artifact. A fixed artifact stays at its position permanently.",
+                "description": "Whether the artifact can be moved, when its type allows it.",
                 "choices": ["true", "false"],
             },
         },
@@ -168,7 +169,7 @@ _SOCIAL_ACTION_TEXT = {
         "Create a public artifact. Its name is visible to your followers.",
         {
             "movable": (
-                "Whether this artifact can enter inventory, be given, or be deposited. "
+                "Whether this artifact can enter inventory or be given. "
                 "A fixed artifact remains one of your public artifacts."
             ),
         },
@@ -412,39 +413,6 @@ def build_reject_connection_action(pending_sender_names: list) -> Tuple[str, dic
     }
 
 
-def build_direct_message_action(
-    current_connections: list,
-    direct_message_cost: int,
-    *,
-    finite_energy: bool = True,
-) -> Tuple[str, dict]:
-    """Build the 'send_direct_message' available-action entry.
-
-    `current_connections` is the list of names the agent is already connected
-    to. The action is meaningful only when that list is non-empty (caller is
-    responsible for not exposing it otherwise).
-
-    Unlike the broadcast `message:` side-channel, this is a private one-to-one
-    message — only the named target sees the content.
-    """
-    description = (
-        "Send a private message to one agent you follow. Only that agent receives it. "
-        "This uses your action for the turn."
-    )
-    if finite_energy and direct_message_cost > 0:
-        description += f" Costs {direct_message_cost} energy."
-    return "send_direct_message", {
-        "description": description,
-        "params": {
-            "target": {
-                "description": "Name of an agent you follow.",
-                "choices": current_connections,
-            },
-            "content": "Plain text content of the private message.",
-        },
-    }
-
-
 def build_request_role_action(open_roles: dict) -> Tuple[str, dict]:
     """Build the 'request_role' available-action entry (roles mode).
 
@@ -580,6 +548,7 @@ def build_spawn_action(
     same_type_nearby_names: list,
     *,
     finite_energy: bool = True,
+    offspring_model_choices: tuple[str, ...] = (),
 ) -> Tuple[str, dict]:
     """Build the 'spawn' available-action entry.
 
@@ -618,6 +587,11 @@ def build_spawn_action(
     )
     params: dict = {"energy": gift_description}
     params["name"] = "Name of the new being (use **unique** names, max 20 characters)"
+    if offspring_model_choices:
+        params["offspring_model"] = {
+            "description": "Choose the model the new agent will use.",
+            "choices": list(offspring_model_choices),
+        }
 
     if genome_type == "sentence_directed":
         params["offspring_genome"] = (
@@ -635,87 +609,3 @@ def build_spawn_action(
         }
 
     return "spawn", {"description": description, "params": params, "optional": ["energy"]}
-
-
-def build_show_library_action(
-    library_count: int, library_preview: bool
-) -> Tuple[str, dict]:
-    """Build the 'show_library_content' available-action entry (social-graph only).
-
-    The library is a shared commons every being can read from and write to. This
-    action lists what it currently holds so the agent can decide what to retrieve.
-    The live count is embedded so the agent always sees the library size.
-    """
-    detail = "name and a short content preview" if library_preview else "name"
-    return "show_library_content", {
-        "description": (
-            f"List the contents of the shared library, which currently holds "
-            f"{library_count} artifact(s). Returns the {detail} of every artifact "
-            "in it so you can decide what to retrieve."
-        ),
-        "params": {},
-    }
-
-
-def build_retrieve_artifact_action(library_names: list) -> Tuple[str, dict]:
-    """Build the 'retrieve_artifact' available-action entry (social-graph only).
-
-    Moves an artifact from the shared library onto the being's own node, where it
-    becomes readable and interactable. The artifact leaves the library.
-    """
-    return "retrieve_artifact", {
-        "description": (
-            "Take an artifact from the shared library into your public artifacts. "
-            "It leaves the library until deposited again."
-        ),
-        "params": {
-            "name": {
-                "description": "Name of an artifact currently in the library.",
-                "choices": library_names,
-            },
-        },
-    }
-
-
-def build_read_artifact_action(library_names: list) -> Tuple[str, dict]:
-    """Build the 'read_artifact' available-action entry (social-graph only).
-
-    Reads the full content of a library artifact in place, WITHOUT removing it
-    from the library — so it stays available for every other agent to read too.
-    """
-    return "read_artifact", {
-        "description": (
-            "Read the full content of an artifact in the shared library WITHOUT "
-            "removing it — it stays in the library for everyone else."
-        ),
-        "params": {
-            "name": {
-                "description": "Name of an artifact currently in the library.",
-                "choices": library_names,
-            },
-        },
-    }
-
-
-def build_deposit_artifact_action(depositable_names: list) -> Tuple[str, dict]:
-    """Build the 'deposit_artifact' available-action entry (social-graph only).
-
-    Moves a movable artifact the being holds (on its node or in its inventory)
-    into the shared library, where any being can later retrieve it. Artifacts in
-    the library remain available until they expire or are retrieved.
-    """
-    return "deposit_artifact", {
-        "description": (
-            "Put one of your movable public or private artifacts into the shared library. "
-            "Other agents can read or retrieve it. "
-            "It remains available until the artifact expires or is retrieved."
-        ),
-        "params": {
-            "name": {
-                "description": (
-                    "Name of one of your movable public or private artifacts."
-                ),
-                "choices": depositable_names,
-            },
-        },
-    }

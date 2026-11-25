@@ -10,7 +10,6 @@ from terralingua.config.models import GraphConfig
 from terralingua.environment.actions import (
     ACTION_TEXT,
     LocationAffordance,
-    build_direct_message_action,
     build_spawn_action,
 )
 from terralingua.environment.social_graph_env import OpenSocialGraphWorld
@@ -27,7 +26,7 @@ def mixed_world(tmp_path):
         "optional": ["query"],
     }
     env = OpenSocialGraphWorld(
-        graph_cfg=GraphConfig.complete(n_nodes=3, direct_message_cost=7),
+        graph_cfg=GraphConfig.complete(n_nodes=3),
         log_path=tmp_path, headless=True, food_mechanism=False,
         init_agent_energy=100, lifespan=200, reproduction_cost=20,
         init_food=0, food_spawn_rate=0, use_inventory=True,
@@ -51,10 +50,10 @@ def test_actual_actor_balance_controls_cost_prose_and_preserves_schema(mixed_wor
     finite = env._get_avail_actions("b")
 
     assert set(unlimited) == set(finite)
-    for action, amount in (("create_artifact", 9), ("send_direct_message", 7), ("world_query", 11)):
+    for action, amount in (("create_artifact", 9), ("world_query", 11)):
         assert f"{amount} energy" not in unlimited[action]["description"]
         assert f"{amount} energy" in finite[action]["description"]
-        assert unlimited[action]["params"] == finite[action]["params"] or action == "send_direct_message"
+        assert unlimited[action]["params"] == finite[action]["params"]
     assert unlimited["world_query"]["description"] == "Query the world."
     assert unlimited["world_query"]["input_schema"] == finite["world_query"]["input_schema"]
     assert unlimited["world_query"]["optional"] == ["query"]
@@ -73,12 +72,14 @@ def test_actual_actor_balance_controls_cost_prose_and_preserves_schema(mixed_wor
     assert "Costs 11 energy." in env._get_avail_actions("a")["world_query"]["description"]
 
 
-def test_infinite_actor_dm_keeps_parameters_without_cost():
-    _, unlimited = build_direct_message_action(["Bob"], 7, finite_energy=False)
-    _, finite = build_direct_message_action(["Bob"], 7)
-    assert "energy" not in unlimited["description"]
-    assert unlimited["params"] == finite["params"]
-    assert "uses your action for the turn" in unlimited["description"]
+def test_infinite_actor_private_message_uses_no_energy_or_action(mixed_world):
+    env = mixed_world
+    obs, _, _, _, infos = env.step({"a": {
+        "action": "noop", "messages": {"Bob": "hello"}, "params": {},
+    }})
+    assert obs["b"]["incoming_dms"] == {"Alice": "hello"}
+    assert math.isinf(env.agent_energy["a"])
+    assert "Message delivery" not in infos["a"]
 
 
 @pytest.mark.parametrize("cost,child_budget", [(20, 20), (0, 100), (0, math.inf)])
@@ -103,7 +104,7 @@ def test_infinite_parent_keeps_finite_child_budget_and_gift(cost, child_budget):
 def test_infinite_parent_spawning_keeps_finite_child_mechanics(mixed_world):
     env = mixed_world
     env.step({"a": {
-        "action": "spawn", "message": "", "params": {"name": "Child", "energy": 5},
+        "action": "spawn", "messages": {}, "params": {"name": "Child", "energy": 5},
     }})
     child = env.name_to_tag["Child"]
     assert env.agent_energy[child] == 25

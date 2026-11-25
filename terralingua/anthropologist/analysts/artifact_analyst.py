@@ -26,7 +26,11 @@ log = logging.getLogger(__name__)
 import numpy as np
 from tqdm import tqdm
 
-from terralingua.anthropologist.analysis_utils import load_agent_log, received_messages
+from terralingua.anthropologist.analysis_utils import (
+    load_agent_log,
+    received_messages,
+    sent_messages,
+)
 from terralingua.anthropologist.analysts.base import BaseAnalyst
 from terralingua.utils import ROOT
 from terralingua.utils.llm_client import LLMClient
@@ -501,7 +505,7 @@ def _get_history(ts_log: dict) -> dict:
         "observation": ts_log["observation"]["observation"],
         "inventory": ts_log["observation"]["inventory"],
         "received_messages": received_messages(ts_log["observation"]),
-        "message_sent": ts_log["action"]["message"],
+        "messages_sent": sent_messages(ts_log["action"]),
         "action": ts_log["action"]["action"],
         "action_parameters": ts_log["action"]["params"],
     }
@@ -554,6 +558,16 @@ def _format_inventory(inventory: list, artifacts, ts: int) -> str:
     return formatted
 
 
+def _format_sent_messages(sent: dict) -> str:
+    lines = []
+    for receiver, text in sent.items():
+        if receiver == "broadcast":
+            lines.append(f"Broadcasted message: {str(text).strip()}")
+        else:
+            lines.append(f"Private message to {receiver}: {str(text).strip()}")
+    return "\n".join(lines)
+
+
 def _format_received_messages(received_messages: dict) -> str:
     if not received_messages:
         return "No messages received."
@@ -588,9 +602,9 @@ def _extract_info_from_log(
     received = received_messages(creation_log["observation"])
     if received:
         agent_observations += "\n" + _format_received_messages(received)
-    sent_message = creation_log["action"]["message"].strip()
-    if sent_message:
-        agent_observations += f"\nBroadcasted message: {sent_message}"
+    sent = sent_messages(creation_log["action"])
+    if sent:
+        agent_observations += "\n" + _format_sent_messages(sent)
     log_info["agent_observations"] = agent_observations
 
     # Memory
@@ -611,8 +625,8 @@ def _extract_info_from_log(
             episode += _format_inventory(h["inventory"], all_artifacts, abs_t) + "\n"
         if h["received_messages"]:
             episode += _format_received_messages(h["received_messages"])
-        if h["message_sent"].strip():
-            episode += f"Broadcasted message: {h['message_sent'].strip()}\n"
+        if h["messages_sent"]:
+            episode += _format_sent_messages(h["messages_sent"]) + "\n"
         if h["action"] != "move":
             episode += f"Action taken: {h['action']} with parameters {h['action_parameters']}\n"
         memory.append(episode)

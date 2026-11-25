@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "terralingua"
-version = "0.2.1"
+version = "0.3.0"
 description = "Multi-agent simulation framework where LLM-powered beings live in a shared world, with an AI anthropologist that annotates the run."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -28,7 +28,7 @@ dependencies = [
     "wonderwords",
     "pyhocon",
     # LLM clients and genomes
-    "litellm>=1.90.2",
+    "litellm>=1.106.0",
     "openai",
     "torch",
     "transformers",

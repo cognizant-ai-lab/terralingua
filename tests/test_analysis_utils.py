@@ -1,6 +1,10 @@
 import json
 
-from terralingua.anthropologist.analysis_utils import load_agent_log, received_messages
+from terralingua.anthropologist.analysis_utils import (
+    load_agent_log,
+    received_messages,
+    sent_messages,
+)
 
 
 def test_received_messages_joins_broadcasts_and_direct_messages():
@@ -38,4 +42,11 @@ def test_reduced_agent_log_keeps_received_messages(tmp_path):
     path.write_text(json.dumps(record) + "\n")
     reduced = load_agent_log(path, reduce=True)
     assert reduced[3]["received_messages"] == {"Ada": "come to the river"}
-    assert reduced[3]["sent_message"] == "on my way"
+    assert reduced[3]["sent_messages"] == {"broadcast": "on my way"}
+
+
+def test_sent_messages_keeps_every_receiver_with_a_text():
+    action = {"action": "noop", "messages": {"broadcast": "hi all", "Bo": "psst", "Cy": ""}}
+    assert sent_messages(action) == {"broadcast": "hi all", "Bo": "psst"}
+    assert sent_messages({"action": "noop", "messages": {}}) == {}
+    assert sent_messages({"action": "noop"}) == {}

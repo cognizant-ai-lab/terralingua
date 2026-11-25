@@ -1,8 +1,10 @@
 import asyncio
 import copy
+import csv
 import json
 import logging
 import os
+import random
 import signal
 import sys
 import threading
@@ -90,6 +92,7 @@ class _ExternalState:
     tools: Dict[str, tuple] = field(default_factory=dict)
     # Tags whose calls were actually sent (all callers, or elected reps).
     dispatched: set = field(default_factory=set)
+    rejected: Dict[str, str] = field(default_factory=dict)
     call_contexts: Dict[str, dict] = field(default_factory=dict)
     # representative tag → (topic, VoteOutcome), unanimous mode only.
     vote_outcomes: Dict[str, tuple] = field(default_factory=dict)
@@ -124,6 +127,13 @@ def render_server_instructions(instructions: dict[str, str]) -> str:
     )
 
 
+def render_prompt_instructions(services: dict[str, str], env) -> str:
+    """System-prompt text of the external services followed by the mechanics' texts."""
+    texts = [render_server_instructions(services)]
+    texts += [mechanic.instructions(env) for mechanic in env.mechanics]
+    return "\n\n".join(text for text in texts if text).strip()
+
+
 _fake = Faker()
 
 
@@ -138,6 +148,12 @@ def _random_agent_name(existing: set[str]) -> str:
     while f"agent{i}" in existing:
         i += 1
     return f"agent{i}"
+
+
+COST_CSV_HEADER = (
+    "timestep,cost_usd,input_tokens,output_tokens,total_cost_usd,"
+    "cached_input_tokens,cache_write_input_tokens"
+)
 
 
 def get_genome_class(genome_type: str) -> Type[Genome]:
@@ -184,13 +200,10 @@ class SimulationRunner(ExecutionReceiptsMixin):
         self.external_managers: dict[str, ExternalRequestManager] = {}
         # Flattened `<server>_<tool>` action specs, built from tool discovery.
         self.external_actions_spec: dict[str, dict] = {}
-        if run_cfg.scenario:
-            import_scenario(run_cfg.scenario)
+        for module_path in run_cfg.mechanic_modules:
+            import_scenario(module_path)
         self._build_external_managers()
         self._build_external_actions_spec()
-        self.server_instructions = render_server_instructions(
-            {name: manager.instructions for name, manager in self.external_managers.items()}
-        )
 
         # Restore checkpoint state using the resolved run parameters.
         self.ckpt = None
@@ -217,14 +230,10 @@ class SimulationRunner(ExecutionReceiptsMixin):
         else:
             self._init_state()
 
-        # Initialize LLM router
-        self.llm_router = LLMRouter(
-            model_short=self.params.agent.model,
-            ports=self.params.run.ports,
-            instances=self.params.run.max_parallel_workers,
-            max_tokens=self.params.agent.max_tokens,
-            reasoning_effort=self.params.agent.reasoning_effort,
-        )
+        self.llm_routers: dict[str, LLMRouter] = {}
+        for agent in self.agents.values():
+            if agent.model is not None:
+                self._router_for(agent.model)
         self.last_refresh = datetime.now()
         self.refresh_interval = timedelta(hours=1)
 
@@ -233,6 +242,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
 
         self._ext_msg_log_path = self.exp_logdir / "external_messages.jsonl"
         self._cost_csv_path = self.exp_logdir / "costs.csv"
+        self._cost_total = self._resume_cost_total()
 
         with open(self.exp_logdir / "params.json", "w") as f:
             json.dump(self.params.to_json(), f, indent=4)
@@ -349,8 +359,6 @@ class SimulationRunner(ExecutionReceiptsMixin):
         high = max(low, int(round(base * 1.2)))
         if low == high:
             return low
-        if self.env.rng is None:
-            self.env.rng = np.random.default_rng()
         return int(self.env.rng.integers(low, high + 1))
 
     def _assign_sampled_lifespan(self, agent_tag: str) -> int | float | None:
@@ -359,8 +367,10 @@ class SimulationRunner(ExecutionReceiptsMixin):
             return None
         sampled = self._sample_agent_lifespan()
         self.env.agent_time[agent_tag] = sampled
+        self.env.agent_lifespan[agent_tag] = sampled
         if agent_tag in self.obs and isinstance(self.obs[agent_tag], dict):
             self.obs[agent_tag]["time"] = sampled
+            self.obs[agent_tag]["lifespan"] = sampled
         return sampled
 
     def _identity_for(self, tag: str) -> dict:
@@ -382,10 +392,13 @@ class SimulationRunner(ExecutionReceiptsMixin):
                     identity.setdefault(key, value)
         return self.env.agent_identity_settled(tag, identity)
 
-    def _make_llm_agent(self, tag: str, name: str, genome: Genome, persona: str = "") -> LLMAgent:
+    def _make_llm_agent(
+        self, tag: str, name: str, genome: Genome, persona: str = "", *, model: str | None = None,
+    ) -> LLMAgent:
         return LLMAgent(
             agent_tag=tag,
             agent_name=name,
+            model=self.params.agent.model if model is None else model,
             log_dir=self.exp_logdir,
             max_history=self.params.agent.max_history,
             system_prompt_template=self.env.system_prompt_template,
@@ -397,6 +410,9 @@ class SimulationRunner(ExecutionReceiptsMixin):
             energy_upkeep=self.env.energy_upkeep,
             finite_energy=bool(np.isfinite(self.env.agent_energy.get(tag, self.env.init_agent_energy))),
             finite_lifespan=self.params.env.agent_lifespan != -1,
+            max_ts=self.params.run.max_ts,
+            init_agents=self.params.env.init_agents,
+            scenario_options=self.params.run.scenario_options,
             spawn_allowed=self.env.spawn_allowed,
             max_connections=getattr(self.env, "max_connections", None),
             external_actions=bool(self.external_managers),
@@ -407,7 +423,8 @@ class SimulationRunner(ExecutionReceiptsMixin):
             persona=persona,
             scenario_specific_instructions=self.params.agent.scenario_specific_instructions,
             max_message_length=self.params.env.max_message_length,
-            server_instructions=getattr(self, "server_instructions", ""),
+            allow_broadcasts=self.params.env.allow_broadcasts,
+            server_instructions=self.server_instructions,
             # Population permanently 1 is a static invariant only when the
             # cap AND the initial population agree (max_agents alone just
             # stops spawn from being offered — it never shrinks a larger
@@ -429,6 +446,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
             internal_memory_size=self.params.agent.internal_memory_size,
             use_inventory=self.params.agent.use_inventory,
             food_mechanism=self.params.env.food_mechanism,
+            allow_broadcasts=self.params.env.allow_broadcasts,
             genome=NoTraitsGenome(),
         )
 
@@ -455,9 +473,11 @@ class SimulationRunner(ExecutionReceiptsMixin):
             spawn_allowed=self.env.spawn_allowed,
             max_connections=getattr(self.env, "max_connections", None),
             max_message_length=self.params.env.max_message_length,
+            stay_action=self.env.stay_action,
+            allow_broadcasts=self.params.env.allow_broadcasts,
             connection_manager=self.connection_manager,
             timeout_s=self.params.run.env_heartbeat,
-            server_instructions=getattr(self, "server_instructions", ""),
+            server_instructions=self.server_instructions,
         )
 
     def register_remote_agent(
@@ -517,6 +537,10 @@ class SimulationRunner(ExecutionReceiptsMixin):
 
     def _make_env(self):
         """Creates the environment instance."""
+        agent_cfg = self.params.agent
+        offspring_model_choices = () if agent_cfg.inherited_model else tuple(
+            dict.fromkeys((agent_cfg.model, *agent_cfg.model_assignment))
+        )
         shared_kwargs = dict(
             init_agent_energy=self.params.env.init_agent_energy,
             init_food=self.params.env.init_food,
@@ -524,12 +548,11 @@ class SimulationRunner(ExecutionReceiptsMixin):
             food_spawn_rate=self.params.env.food_spawn_rate,
             log_path=self.exp_logdir,
             use_inventory=self.params.agent.use_inventory,
-            use_library=self.params.env.use_library,
-            library_preview=self.params.env.library_preview,
             allow_fixed_artifacts=self.params.env.allow_fixed_artifacts,
             max_artifact_tokens=self.params.env.max_artifact_tokens,
             use_colors=self.params.agent.use_colors,
             reproduction_cost=self.params.env.reproduction_cost,
+            offspring_model_choices=offspring_model_choices,
             artifact_creation_cost=self.params.env.artifact_creation_cost,
             two_parent_spawn=self.params.env.two_parent_spawn,
             max_agents=self.params.env.max_agents,
@@ -546,6 +569,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
             excluded_actions=self.params.env.excluded_actions,
             headless=not self.params.run.live_render,
             max_message_length=self.params.env.max_message_length,
+            allow_broadcasts=self.params.env.allow_broadcasts,
             roles_hocon_path=self.params.env.roles_hocon_path,
             affordances_file_path=self.params.env.affordances_file_path,
         )
@@ -566,11 +590,13 @@ class SimulationRunner(ExecutionReceiptsMixin):
                 vision_radius=self.params.env.vision_radius,
                 **shared_kwargs,  # type: ignore
             )
-        if self.params.run.scenario:
-            for mechanic in load_scenario(
-                self.params.run.scenario, self.params.run.scenario_options
-            ):
+        for module_path, options in self.params.run.mechanic_modules.items():
+            for mechanic in load_scenario(module_path, options):
                 self.env.attach(mechanic)
+        self.server_instructions = render_prompt_instructions(
+            {name: manager.instructions for name, manager in self.external_managers.items()},
+            self.env,
+        )
         self._stay_action = self.env.stay_action
 
     def _seed_artifacts_from_path(self, path: str):
@@ -611,6 +637,16 @@ class SimulationRunner(ExecutionReceiptsMixin):
                     "Warning: failed to load artifact from %s: %s", json_file, e
                 )
 
+    def _initial_models(self, population: int) -> list[str]:
+        self.params.validate_model_assignment(population)
+        assignment = self.params.agent.model_assignment
+        models = [self.params.agent.model] * (population - sum(assignment.values()))
+        for model, assigned_count in sorted(assignment.items()):
+            models.extend([model] * assigned_count)
+        if assignment:
+            random.Random(self.params.run.seed).shuffle(models)
+        return models
+
     def _init_state(self):
         """Initializes state and environment from scratch."""
         self._make_env()
@@ -623,7 +659,8 @@ class SimulationRunner(ExecutionReceiptsMixin):
             network = load_neuro_san_agent_network(
                 self.params.env.graph.agent_network_hocon_path
             )
-            for spec in network.agents:
+            models = self._initial_models(len(network.agents))
+            for spec, model in zip(network.agents, models, strict=True):
                 agent_tag = spec.name
                 agent_name = spec.display_as or spec.name
                 genome_sentence = "\n\n".join(
@@ -633,6 +670,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
                     tag=agent_tag,
                     name=agent_name,
                     genome=SentenceDirectedGenome(sentence=genome_sentence),
+                    model=model,
                 )
                 self.agents[agent_tag] = agent
                 self.env.add_agent(
@@ -663,6 +701,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
 
             use_random_names = self.params.agent.random_names
             used_names: set[str] = set()
+            models = iter(self._initial_models(self.params.env.init_agents))
 
             for agent_tag, agent_type in init_agents.items():
                 if agent_type == "text":
@@ -678,6 +717,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
                         tag=agent_tag,
                         name=agent_name,
                         genome=genome_cls().random(),
+                        model=next(models),
                         **({"persona": identity["persona"]} if identity.get("persona") else {}),
                     )
                     self.env.add_agent(
@@ -779,6 +819,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
                 continue
             if tag in self.obs:
                 self.obs[tag]["time"] = self.env.agent_time[tag]
+                self.obs[tag]["lifespan"] = self.env.agent_lifespan[tag]
                 self.obs[tag]["energy"] = self.env.agent_energy[tag]
             actions = self.env._get_avail_actions(tag)
             self.env.agent_avail_actions[tag] = actions
@@ -863,8 +904,8 @@ class SimulationRunner(ExecutionReceiptsMixin):
                                 else (int(agent_pos[0]), int(agent_pos[1]))
                             )
                         serialized["carrier"] = where
-                    elif kind == "library":
-                        serialized["pose"] = "Library"
+                    elif kind == "stored":
+                        serialized["pose"] = None
                         serialized["carrier"] = None
                 artifacts.append(serialized)
             except Exception:
@@ -965,6 +1006,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
                     child_name = info["spawn"]["child_name"]
                     child_tag = info["spawn"]["child_tag"]
                     parent_b_tag = info["spawn"].get("parent_b_tag")
+                    offspring_model = info["spawn"].get("offspring_model")
 
                     # If spawning is two-parent, crossover the genomes of both parents to create the child genome.
                     if parent_b_tag is not None and parent_b_tag in self.agents:
@@ -990,7 +1032,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
 
                     if isinstance(parent, RemoteAgent) and self.registry is not None:
                         parent_record = await self.registry.get_by_tag(agent_tag)
-                        model_info = parent_record.model_info if parent_record else ""
+                        model_info = offspring_model or (parent_record.model_info if parent_record else "")
                         record = await self.registry.register_with_tag(
                             agent_tag=child_tag,
                             agent_name=child_name,
@@ -1008,6 +1050,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
                             "agent_tag": child_tag,
                             "token": record.token,
                             "parent_tag": agent_tag,
+                            "model": offspring_model,
                         }
                         if self.dashboard_manager is not None:
                             await self.dashboard_manager.broadcast_push(child_push)
@@ -1016,6 +1059,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
                             tag=child_tag,
                             name=child_name,
                             genome=child_genome,
+                            model=offspring_model or parent.model,
                         )
                     self._assign_sampled_lifespan(child_tag)
                     # Social-graph worlds: a newborn without followers
@@ -1319,13 +1363,24 @@ class SimulationRunner(ExecutionReceiptsMixin):
         if ckpt_interval and ts % ckpt_interval == 0 and ts != self.start_ts:
             await self._save_checkpoint(ts)
 
+    def _router_for(self, model: str) -> LLMRouter:
+        if model not in self.llm_routers:
+            self.llm_routers[model] = LLMRouter(
+                model_short=model,
+                ports=self.params.run.ports,
+                instances=self.params.run.max_parallel_workers,
+                max_tokens=self.params.agent.max_tokens,
+                reasoning_effort=self.params.agent.reasoning_effort,
+            )
+        return self.llm_routers[model]
+
     def _maybe_refresh_llm_router(self) -> None:
         if datetime.now() - self.last_refresh > self.refresh_interval:
             logger.info("🔄 Refreshing LLM clients... 🔄")
-            self.llm_router.refresh(
-                ports=self.params.run.ports,
-                instances=self.params.run.max_parallel_workers,
-            )
+            for router in self.llm_routers.values():
+                router.refresh(
+                    ports=self.params.run.ports, instances=self.params.run.max_parallel_workers,
+                )
             self.last_refresh = datetime.now()
 
     def _refresh_role_context(self):
@@ -1357,33 +1412,35 @@ class SimulationRunner(ExecutionReceiptsMixin):
         }
         window = self.params.run.env_heartbeat
 
+        decision_started = {}
+        batch_started = time.perf_counter()
+
+        async def _turn(tag, agent):
+            agent.names_by_tag = self.env.agent_names
+            agent_info = {
+                k: v for k, v in self.infos.get(tag, {}).items()
+                if k != "available_actions"
+            }
+            started = decision_started[tag] = time.perf_counter()
+            client, chat_params = (
+                self._router_for(agent.model).next()
+                if agent.model is not None else (None, {})
+            )
+            action = await async_select_with_retry(
+                agent, self.obs[tag], available_actions[tag],
+                self.rewards.get(tag, 0), agent_info, ts, client, chat_params,
+            )
+            action["seconds"] = round(time.perf_counter() - started, 3)
+            action["decision_step"] = ts
+            return action
+
         async def _bounded(tag, agent):
-            # Pass infos to the agent without the available_actions key — it is
-            # provided as a dedicated argument, so including it here is redundant.
-            tag_info = self.infos.get(tag)
-            agent_info = (
-                {k: v for k, v in tag_info.items() if k != "available_actions"}
-                if tag_info is not None
-                else None
-            )
-            coro = async_select_with_retry(
-                agent,
-                self.obs[tag],
-                available_actions[tag],
-                self.rewards.get(tag, 0),
-                agent_info,
-                ts,
-                *self.llm_router.next(),
-            )
             if isinstance(agent, (RemoteAgent, HumanAgent)):
-                # Remote/human agents don't call a local LLM — skip the semaphore
-                # so they're never queued behind LLM agents and always get the
-                # full window.
-                return await coro
+                return await _turn(tag, agent)
             if self._llm_semaphore is not None:
                 async with self._llm_semaphore:
-                    return await coro
-            return await coro
+                    return await _turn(tag, agent)
+            return await _turn(tag, agent)
 
         tasks = {
             tag: asyncio.create_task(_bounded(tag, agent))
@@ -1404,40 +1461,80 @@ class SimulationRunner(ExecutionReceiptsMixin):
                 ),
                 asyncio.sleep(window),
             )
-        actions = {
-            tag: (
-                result
-                if not isinstance(result, BaseException)
-                else {
-                    **self._stay_action,
-                    "source": "default",
-                    "default_reason": "agent_timeout"
-                    if isinstance(result, asyncio.TimeoutError)
-                    else "agent_error",
-                }
-            )
-            for tag, result in zip(tasks.keys(), results)
-        }
+        actions = {}
+        for tag, result in zip(tasks, results):
+            if isinstance(result, BaseException):
+                agent = self.agents[tag]
+                agent.names_by_tag = self.env.agent_names
+                result = agent.record_default_action(
+                    self.obs[tag], available_actions[tag],
+                    {k: v for k, v in self.infos.get(tag, {}).items()
+                     if k != "available_actions"}, ts,
+                    {**self._stay_action, "source": "default",
+                     "default_reason": "agent_timeout"
+                     if isinstance(result, asyncio.TimeoutError) else "agent_error"},
+                )
+                result["decision_step"] = ts
+                result["seconds"] = round(
+                    time.perf_counter() - decision_started.get(tag, batch_started), 3,
+                )
+            actions[tag] = result
         return actions
 
+    def _resume_cost_total(self) -> float:
+        """The cost already recorded in costs.csv, so the running total continues
+        across a resume. A file from before the total column gets the column."""
+        if not self._cost_csv_path.exists():
+            return 0.0
+        with open(self._cost_csv_path, newline="") as f:
+            rows = list(csv.DictReader(f))
+        if not rows:
+            return 0.0
+        fields = COST_CSV_HEADER.split(",")
+        if all(field in rows[0] for field in fields):
+            return float(rows[-1]["total_cost_usd"])
+        total = 0.0
+        with open(self._cost_csv_path, "w") as f:
+            writer = csv.DictWriter(f, fieldnames=fields)
+            writer.writeheader()
+            for row in rows:
+                total += float(row["cost_usd"])
+                if row.get("total_cost_usd"):
+                    total = float(row["total_cost_usd"])
+                row["total_cost_usd"] = f"{total:.6f}"
+                # Historical cache counts were not recorded. Leave them blank.
+                writer.writerow({field: row.get(field, "") for field in fields})
+        return total
+
     def _log_step_usage(self, ts: int, actions: dict) -> None:
-        """Append this timestep's total LLM cost (USD) and token usage to costs.csv.
+        """Append this timestep's LLM cost (USD), token usage and the running
+        total cost to costs.csv.
 
         Each agent action carries the cost and input/output token counts of the
         LLM call(s) that produced it (summed across retries). Cost is computed by
         litellm, accounting for the model and Anthropic prompt-cache tokens; models
         litellm can't price (e.g. local vLLM) contribute 0.0. Here we sum across all
-        agents that acted this timestep and write one row. This supersedes the old
-        per-agent agent_logs/token_counts.jsonl."""
+        agents that acted this timestep and write one row."""
         acted = [a for a in actions.values() if isinstance(a, dict)]
         step_cost = sum(a.get("cost", 0.0) for a in acted)
         input_tokens = sum(a.get("input_tokens", 0) for a in acted)
         output_tokens = sum(a.get("output_tokens", 0) for a in acted)
+        cache_counts = []
+        for key in ("cached_input_tokens", "cache_write_input_tokens"):
+            values = [a.get(key) for a in acted if a.get("input_tokens", 0)]
+            cache_counts.append(
+                str(sum(values)) if all(v is not None for v in values) else ""
+            )
+        self._cost_total += step_cost
         write_header = not self._cost_csv_path.exists()
         with open(self._cost_csv_path, "a") as f:
             if write_header:
-                f.write("timestep,cost_usd,input_tokens,output_tokens\n")
-            f.write(f"{ts},{step_cost:.6f},{input_tokens},{output_tokens}\n")
+                f.write(COST_CSV_HEADER + "\n")
+            f.write(
+                f"{ts},{step_cost:.6f},{input_tokens},{output_tokens},{self._cost_total:.6f},"
+                + ",".join(cache_counts)
+                + "\n"
+            )
 
     def _process_external_prestep(self, actions: dict) -> _ExternalState:
         """Vote on agents' external actions and dispatch the validated ones.
@@ -1446,32 +1543,40 @@ class SimulationRunner(ExecutionReceiptsMixin):
         suppresses the rest to no-ops); the runner then dispatches the surviving
         actions to the MCP servers and records this step's bookkeeping.
         """
-        if not self.external_managers:
-            return _ExternalState()
-
-        # Collect flattened <server>_<tool> actions: agent_tag -> (server, tool, args)
-        ext_by_tag: dict[str, tuple[str, str, dict]] = {}
-        for agent_tag, action_data in actions.items():
-            name = action_data.get("action")
-            if name in self.external_actions_spec:
-                spec = self.external_actions_spec[name]
-                args = dict(action_data.get("params", {}) or {})
-                ext_by_tag[agent_tag] = (spec["server"], spec["tool"], args)
-
-        if not ext_by_tag:
-            return _ExternalState()
-
         state = _ExternalState()
-        state.requests = {tag: args for tag, (_, _, args) in ext_by_tag.items()}
-        state.tools = {tag: (srv, tool) for tag, (srv, tool, _) in ext_by_tag.items()}
+        ext_by_tag: dict[str, tuple[str, str, dict]] = {}
+        reserved = {}
+        for agent_tag, action_data in actions.items():
+            action_data.pop("external_cost_paid", None)
+            name = action_data.get("action")
+            if not isinstance(name, str) or name not in self.external_actions_spec:
+                continue
+            args = action_data.get("params", {})
+            state.requests[agent_tag] = copy.deepcopy(args)
+            error = self.env.external_action_error(agent_tag, name, args)
+            spec = self.external_actions_spec[name]
+            if not error and spec["server"] not in self.external_managers:
+                error = f"The external server for '{name}' is unavailable."
+            if error:
+                state.rejected[agent_tag] = error
+                actions[agent_tag] = {
+                    **self._stay_action, "messages": action_data.get("messages", {}),
+                    "source": "default", "default_reason": "external_validation",
+                }
+                continue
+            ext_by_tag[agent_tag] = (spec["server"], spec["tool"], args)
+            state.tools[agent_tag] = (spec["server"], spec["tool"])
+            self.env.agent_energy[agent_tag] -= spec["cost"]
+            reserved[agent_tag] = spec["cost"]
 
         # Per server, let the voting manager validate which actions are enacted.
         requests_by_server: dict[str, dict[str, dict]] = {}
         for tag, (server, _, args) in ext_by_tag.items():
             requests_by_server.setdefault(server, {})[tag] = args
         to_dispatch: dict[str, dict] = {}
-        for server, requests in requests_by_server.items():
-            validation = self.voting_managers[server].validate(
+        for server, manager in self.voting_managers.items():
+            requests = requests_by_server.get(server, {})
+            validation = manager.validate(
                 actions, requests, self._stay_action, rng=self.env.rng
             )
             to_dispatch.update(validation.to_dispatch)
@@ -1479,6 +1584,11 @@ class SimulationRunner(ExecutionReceiptsMixin):
             for topic, outcome in validation.outcomes.items():
                 state.vote_outcomes[outcome.representative] = (topic, outcome)
         state.dispatched = set(to_dispatch)
+        for tag, cost in reserved.items():
+            if tag not in state.dispatched:
+                self.env.agent_energy[tag] += cost
+            else:
+                actions[tag]["external_cost_paid"] = True
         for tag in state.dispatched:
             server, tool = state.tools[tag]
             handler = getattr(self, "external_state_handlers", {}).get(server)
@@ -1530,6 +1640,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
     def _process_external_poststep(self, state: _ExternalState, ts: int) -> None:
         """Inject incoming messages, distribute reward, record, and log."""
         if not self.external_managers:
+            self._record_external_outcomes(state, {}, ts)
             return
 
         incoming_by_agent = self._handle_incoming_external_messages(
@@ -1892,12 +2003,24 @@ class SimulationRunner(ExecutionReceiptsMixin):
                                     continue
                                 action_dict = rec.get("action") or {}
                                 obs = rec.get("observation") or {}
+                                messages = action_dict.get("messages")
+                                if not isinstance(messages, dict):
+                                    messages = {}
+                                    broadcast = action_dict.get("message")
+                                    if isinstance(broadcast, str) and broadcast:
+                                        messages["broadcast"] = broadcast
+                                    if action_dict.get("action") == "send_direct_message":
+                                        old_params = action_dict.get("params") or {}
+                                        target = old_params.get("target")
+                                        content = old_params.get("content")
+                                        if isinstance(target, str) and target and isinstance(content, str) and content:
+                                            messages[target] = content
                                 entries.append(
                                     {
                                         "step": step,
                                         "action": action_dict.get("action"),
                                         "params": action_dict.get("params"),
-                                        "message": action_dict.get("message", ""),
+                                        "messages": messages,
                                         "memory": rec.get("internal_memory", ""),
                                         "inventory": obs.get("inventory", []),
                                         "energy": _dashboard_resource(obs.get("energy")),
@@ -2143,7 +2266,7 @@ class SimulationRunner(ExecutionReceiptsMixin):
 
     def _external_task_solved(self) -> bool:
         """True if any external server reported task completion this step — a truthy
-        'solved' or 'done' in a response. Used by run.stop_on_external_solved so a
+        'solved', 'done', or 'terminated' in a response. Used by run.stop_on_external_solved so a
         one-shot task ends the run the moment it is solved rather
         than idling to max_ts."""
         for info in self.obs.values():
@@ -2154,7 +2277,9 @@ class SimulationRunner(ExecutionReceiptsMixin):
                     data = json.loads(resp)
                 except (json.JSONDecodeError, TypeError):
                     continue
-                if isinstance(data, dict) and (data.get("solved") or data.get("done")):
+                if isinstance(data, dict) and (
+                    data.get("solved") or data.get("done") or data.get("terminated")
+                ):
                     return True
         return False
 
@@ -2221,6 +2346,8 @@ class SimulationRunner(ExecutionReceiptsMixin):
                 _maintenance_start = time.perf_counter()
                 self._process_external_poststep(ext_state, ts)
                 self._record_local_action_receipts(actions, ext_state, ts)
+                for tag in actions:
+                    self.agents[tag].log_turn(ts)
                 logger.info(
                     "[step.phases] ts=%d decision_ms=%.1f environment_ms=%.1f maintenance_ms=%.1f",
                     ts, _decision_ms, _step_ms,

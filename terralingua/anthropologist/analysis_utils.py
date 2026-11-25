@@ -7,6 +7,17 @@ from typing import List
 import numpy as np
 
 
+def sent_messages(action: dict) -> dict:
+    """Messages an agent sent in one step, by receiver. The receiver "broadcast"
+    stands for every being that could hear the agent. An action whose message is
+    a plain string holds one broadcast."""
+    messages = action.get("messages")
+    if isinstance(messages, dict):
+        return {receiver: text for receiver, text in messages.items() if text}
+    text = action.get("message")
+    return {"broadcast": text} if isinstance(text, str) and text else {}
+
+
 def received_messages(observation: dict) -> dict:
     """Messages an agent received in one step, by sender: broadcasts and direct messages."""
     messages = dict(observation.get("incoming_broadcasts", {}))
@@ -49,7 +60,7 @@ def load_agent_log(filepath: Path | str, reduce: bool) -> dict:
                     action_dict = deepcopy(obj["action"])
                     obj["action"] = action_dict["action"]
                     obj["action_params"] = action_dict.get("params", {})
-                    obj["sent_message"] = action_dict.get("message", "")
+                    obj["sent_messages"] = sent_messages(action_dict)
 
                     obs_dict = deepcopy(obj["observation"])
                     obj["observation"] = obs_dict.get("observation", {})

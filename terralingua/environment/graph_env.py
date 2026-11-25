@@ -26,6 +26,74 @@ from terralingua.environment.env_logger import Event
 from terralingua.environment.graph_builder import build_graph
 from terralingua.environment.world_graph import WorldGraph
 
+# Rendering. Colours are shared by the grid and the graph drawings.
+RENDER_SCALE = 2  # the graph is drawn at this multiple and scaled down, which smooths it
+MAX_LABELLED_NODES = 60  # empty nodes show their id up to this graph size
+BG_COLOR = (245, 245, 245)
+GRID_LINE_COLOR = (220, 220, 220)
+HOP_COLOR = (225, 225, 225)
+FOOD_LIGHT = (200, 235, 205)
+FOOD_DARK = (90, 180, 100)
+ARTIFACT_COLOR = (180, 60, 70)
+AGENT_COLOR = (40, 90, 140)
+ACCENT_COLOR = (70, 130, 180)
+INK_COLOR = (38, 38, 38)
+INK_MUTED_COLOR = (128, 128, 128)
+EDGE_COLOR = (196, 196, 196)
+ONE_WAY_EDGE_COLOR = (158, 158, 158)
+ARROW_COLOR = (110, 110, 110)
+EMPTY_NODE_COLOR = (255, 255, 255)
+NODE_OUTLINE_COLOR = (178, 178, 178)
+
+
+def _food_color(value: float, max_value: float) -> Tuple[int, int, int]:
+    ratio = max(0.0, min(1.0, float(value) / float(max_value)))
+    return tuple(int(FOOD_LIGHT[i] + (FOOD_DARK[i] - FOOD_LIGHT[i]) * ratio) for i in range(3))
+
+
+def _agent_fill_color(chosen: str | None) -> Tuple[int, int, int]:
+    """The colour a being picked with set_color, or the default when unset or unknown."""
+    if chosen:
+        try:
+            c = pygame.Color(chosen)
+            return (c.r, c.g, c.b)
+        except ValueError:
+            pass
+    return AGENT_COLOR
+
+
+def _energy_radius(base: float, energy: float, ref_energy: float) -> float:
+    """Node radius grows with the square root of energy over the initial energy."""
+    if not math.isfinite(ref_energy) or ref_energy <= 0:
+        return base
+    return base * max(0.65, min(1.35, math.sqrt(max(energy, 0.0) / ref_energy)))
+
+
+def _aa_disc(surf, color, pos, r) -> None:
+    x, y = int(round(pos[0])), int(round(pos[1]))
+    pygame.gfxdraw.filled_circle(surf, x, y, int(r), color)
+    pygame.gfxdraw.aacircle(surf, x, y, int(r), color)
+
+
+def _aa_ring(surf, color, pos, r, width) -> None:
+    x, y = int(round(pos[0])), int(round(pos[1]))
+    for k in range(int(width)):
+        pygame.gfxdraw.aacircle(surf, x, y, int(r) + k, color)
+
+
+def _arrowhead(surf, color, src, dst, node_r, size) -> None:
+    """Filled triangle on the line src→dst, just outside dst's node."""
+    dx, dy = dst[0] - src[0], dst[1] - src[1]
+    dist = math.hypot(dx, dy) or 1.0
+    ux, uy = dx / dist, dy / dist
+    tip = (dst[0] - ux * node_r, dst[1] - uy * node_r)
+    ang = math.atan2(uy, ux)
+    left = (tip[0] - size * math.cos(ang - 0.45), tip[1] - size * math.sin(ang - 0.45))
+    right = (tip[0] - size * math.cos(ang + 0.45), tip[1] - size * math.sin(ang + 0.45))
+    pts = [(int(round(a)), int(round(b))) for a, b in (tip, left, right)]
+    pygame.gfxdraw.filled_polygon(surf, pts, color)
+    pygame.gfxdraw.aapolygon(surf, pts, color)
+
 
 class OpenGraphWorld(BaseWorld):
     """Agents live on graph nodes and move via named exit labels."""
@@ -46,8 +114,6 @@ class OpenGraphWorld(BaseWorld):
         log_path: Path | str | None = None,
         drop_food_on_death: bool = True,
         use_inventory: bool = False,
-        use_library: bool = False,
-        library_preview: bool = True,
         allow_fixed_artifacts: bool = True,
         max_artifact_tokens: int = MAX_TEXT_ARTIFACT_SIZE,
         use_colors: bool = False,
@@ -68,8 +134,10 @@ class OpenGraphWorld(BaseWorld):
         excluded_actions: List[str] | None = None,
         headless: bool = False,
         max_message_length: int = 200,
+        allow_broadcasts: bool = True,
         roles_hocon_path: str | None = None,
         affordances_file_path: str | None = None,
+        offspring_model_choices: tuple[str, ...] = (),
     ):
         super().__init__(
             init_agent_energy=init_agent_energy,
@@ -82,12 +150,11 @@ class OpenGraphWorld(BaseWorld):
             log_path=log_path,
             drop_food_on_death=drop_food_on_death,
             use_inventory=use_inventory,
-            use_library=use_library,
-            library_preview=library_preview,
             allow_fixed_artifacts=allow_fixed_artifacts,
             max_artifact_tokens=max_artifact_tokens,
             use_colors=use_colors,
             reproduction_cost=reproduction_cost,
+            offspring_model_choices=offspring_model_choices,
             artifact_creation_cost=artifact_creation_cost,
             two_parent_spawn=two_parent_spawn,
             max_agents=max_agents,
@@ -104,6 +171,7 @@ class OpenGraphWorld(BaseWorld):
             excluded_actions=excluded_actions,
             headless=headless,
             max_message_length=max_message_length,
+            allow_broadcasts=allow_broadcasts,
             exclusive_pos_occupancy=False,
             roles_hocon_path=roles_hocon_path,
             affordances_file_path=affordances_file_path,
@@ -234,8 +302,6 @@ class OpenGraphWorld(BaseWorld):
         using BFS hop distance, matching OpenGridWorld's zone semantics.
         Weights are normalised to sum to 1.
         """
-        if self.rng is None:
-            self.rng = np.random.default_rng()
         all_nodes = self.world_graph.all_nodes()
         n_nodes = len(all_nodes)
 
@@ -289,8 +355,6 @@ class OpenGraphWorld(BaseWorld):
     def _offspring_position(self, center: str, node_id: str | None = None) -> str | None:
         """Return a random neighbor of center with no agents, or None.
         When shared occupancy is allowed, returns any random neighbor."""
-        if self.rng is None:
-            self.rng = np.random.default_rng()
         neighbors = list(self.world_graph.neighbors(center))
         if not neighbors:
             return None
@@ -303,8 +367,6 @@ class OpenGraphWorld(BaseWorld):
 
     def _random_free_pos(self) -> str:
         """Return a random unoccupied graph node, or any node when shared occupancy is allowed."""
-        if self.rng is None:
-            self.rng = np.random.default_rng()
         all_nodes = self.world_graph.all_nodes()
         if not self.exclusive_pos_occupancy:
             return all_nodes[int(self.rng.integers(0, len(all_nodes)))]
@@ -315,8 +377,6 @@ class OpenGraphWorld(BaseWorld):
 
     def _respawn_food_one(self, value: float | None = None) -> None:
         food_value = value if value is not None else self._max_food_value
-        if self.rng is None:
-            self.rng = np.random.default_rng()
         # Ensure spawn distribution is initialised
         if self._food_spawn_nodes is None:
             self._get_food_weights()
@@ -336,8 +396,6 @@ class OpenGraphWorld(BaseWorld):
                 self.food[node] = food_value
 
     def _seed_initial_food(self) -> None:
-        if self.rng is None:
-            self.rng = np.random.default_rng()
         if self._food_spawn_nodes is None:
             self._get_food_weights()
 
@@ -439,6 +497,7 @@ class OpenGraphWorld(BaseWorld):
             "incoming_broadcasts": messages,
             "energy": self.agent_energy[agent],
             "time": self.agent_time[agent],
+            "lifespan": self.agent_lifespan[agent],
             "inventory": inventory_list,
             "hop_radius": self.hop_radius,
         }
@@ -515,8 +574,8 @@ class OpenGraphWorld(BaseWorld):
     #   _get_location_removals(location) -> set[str]
     #       Returns a set of action names to suppress at this location even if
     #       they are globally available (e.g. remove spawn on spoke
-    #       nodes to restrict it to the hub only).  Applied immediately after
-    #       _get_location_affordance, before excluded_actions.
+    #       nodes to restrict it to the hub only).  Applied after the mechanics
+    #       added their menu entries, together with excluded_actions.
     #
     #   _on_location_action(agent, action_name, action_params, infos) -> bool
     #       Called at the top of the step dispatch chain for custom (non-built-in)
@@ -563,6 +622,56 @@ class OpenGraphWorld(BaseWorld):
         self._node_layout = {
             nid: (float(pos[0]), float(pos[1])) for nid, pos in raw_layout.items()
         }
+
+    def _place_missing_nodes(self) -> None:
+        """Give a position to every node created after the layout was cached,
+        such as the node of a spawned being.
+
+        A new node goes one typical node spacing away from a neighbour that has
+        a position, on the side facing away from the layout's centre; later
+        siblings fan out around that direction. A node with no placed neighbour
+        goes on a ring just outside the layout.
+        """
+        if self.graph_cfg.topology == "grid" or not self._node_layout:
+            return
+        missing = [n for n in self.world_graph.all_nodes() if n not in self._node_layout]
+        if not missing:
+            return
+        points = list(self._node_layout.values())
+        cx = sum(x for x, _ in points) / len(points)
+        cy = sum(y for _, y in points) / len(points)
+        outer = max(math.hypot(x - cx, y - cy) for x, y in points)
+        spacing = 0.3
+        if len(points) > 1:
+            nearest = [
+                min(math.hypot(x - ox, y - oy) for ox, oy in points if (ox, oy) != (x, y))
+                for x, y in points
+            ]
+            spacing = max(0.05, sorted(nearest)[len(nearest) // 2])
+        fan = [0.0] + [sign * step for step in (0.7, 1.4, 2.1, 2.8) for sign in (1, -1)]
+        for index, node in enumerate(missing):
+            anchors = [
+                n for n in self.world_graph.predecessors(node) + self.world_graph.neighbors(node)
+                if n in self._node_layout
+            ]
+            if anchors:
+                ax, ay = self._node_layout[anchors[0]]
+                base = math.atan2(ay - cy, ax - cx)
+                candidates = [
+                    (ax + spacing * math.cos(base + turn), ay + spacing * math.sin(base + turn))
+                    for turn in fan
+                ]
+            else:
+                angle = (len(self._node_layout) + index) * math.pi * (3 - math.sqrt(5))
+                radius = outer + spacing
+                candidates = [(cx + radius * math.cos(angle), cy + radius * math.sin(angle))]
+            taken = list(self._node_layout.values())
+            chosen = next(
+                (c for c in candidates
+                 if all(math.hypot(c[0] - tx, c[1] - ty) >= 0.6 * spacing for tx, ty in taken)),
+                candidates[-1],
+            )
+            self._node_layout[node] = (float(chosen[0]), float(chosen[1]))
 
     def restart_env(self, seed=None, **options):
         observations, infos = super().restart_env(seed=seed, **options)
@@ -613,6 +722,8 @@ class OpenGraphWorld(BaseWorld):
             self._font = pygame.font.SysFont(None, 15)
             self._font_hdr = pygame.font.SysFont(None, 17, bold=True)
             self._font_tag = pygame.font.SysFont(None, 13, bold=True)
+            self._font_label = pygame.font.SysFont(None, 13 * RENDER_SCALE)
+            self._font_node_id = pygame.font.SysFont(None, 11 * RENDER_SCALE)
             self._scroll_offset = 0
             self._msg_log = []
             self._seen_msgs: set = set()
@@ -694,24 +805,12 @@ class OpenGraphWorld(BaseWorld):
             grid_pixel_w = self._window_size[0] - sidebar_w
             grid_pixel_h = self._window_size[1]
 
-        # --- Color palette ---
-        BG_COLOR = (245, 245, 245)
-        GRID_LINE_COLOR = (220, 220, 220)
-        HOP_COLOR = (225, 225, 225)
-        FOOD_LIGHT = (200, 235, 205)
-        FOOD_DARK = (90, 180, 100)
-        ARTIFACT_COLOR = (180, 60, 70)
-        AGENT_COLOR = (40, 90, 140)
-        EDGE_COLOR = (200, 200, 200)
-        NODE_COLOR = (230, 230, 230)
-
-        grid_surf = pygame.Surface((grid_pixel_w, grid_pixel_h))
-        grid_surf.fill(BG_COLOR)
-
         is_grid = self.graph_cfg.topology == "grid"
 
         if is_grid:
             # ── Grid topology: cell-per-node rendering ──────────────────────
+            grid_surf = pygame.Surface((grid_pixel_w, grid_pixel_h))
+            grid_surf.fill(BG_COLOR)
             k = max(2, int(math.isqrt(self.graph_cfg.n_nodes)))
             cell_w = grid_pixel_w / k
             cell_h = grid_pixel_h / k
@@ -740,14 +839,9 @@ class OpenGraphWorld(BaseWorld):
             # Food
             for node_id, val in self.food.items():
                 nr, nc = _rc(node_id)
-                ratio = max(0.0, min(1.0, float(val) / float(self._max_food_value)))
-                color = tuple(
-                    int(FOOD_LIGHT[i] + (FOOD_DARK[i] - FOOD_LIGHT[i]) * ratio)
-                    for i in range(3)
-                )
                 pygame.draw.rect(
                     grid_surf,
-                    color,
+                    _food_color(val, self._max_food_value),
                     pygame.Rect(int(nc * cell_w), int(nr * cell_h), cw, ch),
                 )
 
@@ -787,120 +881,10 @@ class OpenGraphWorld(BaseWorld):
                 )
 
         else:
-            # ── General topology: force-directed graph rendering ─────────────
-            # Build/cache topology-aware layout
+            # ── General topology: cached layout, drawn by _draw_graph_surface ──
             self._compute_node_layout()
-
-            margin = 30
-            eff_w = grid_pixel_w - 2 * margin
-            eff_h = grid_pixel_h - 2 * margin
-
-            xs = [v[0] for v in self._node_layout.values()]
-            ys = [v[1] for v in self._node_layout.values()]
-            min_x, max_x = min(xs), max(xs)
-            min_y, max_y = min(ys), max(ys)
-            span_x = max(max_x - min_x, 1e-6)
-            span_y = max(max_y - min_y, 1e-6)
-
-            def _px(node_id: str) -> Tuple[int, int]:
-                lx, ly = self._node_layout[node_id]
-                px = int(margin + (lx - min_x) / span_x * eff_w)
-                py = int(margin + (ly - min_y) / span_y * eff_h)
-                return px, py
-
-            n_nodes = len(self._node_layout)
-            node_radius = max(6, min(16, grid_pixel_w // (n_nodes // 2 + 1)))
-
-            # Collect per-agent hop neighborhoods
-            agent_hop: Dict[str, set] = {}
-            for agent in self.agent_registry:
-                neighborhood = self.world_graph.nodes_within_hops(
-                    self.agent_pos[agent], self.hop_radius
-                )
-                agent_hop[agent] = set(neighborhood.keys())
-            all_hop_nodes: set = (
-                set().union(*agent_hop.values()) if agent_hop else set()
-            )
-
-            # Edges — drawn directionally. Each unordered pair is drawn once.
-            # A mutual pair (both u→v and v→u) is a plain line; a one-way edge
-            # additionally gets an arrowhead at its destination so asymmetric
-            # links (as in the social-graph world) are visible. Hop-radius edges
-            # (both endpoints reachable) use a stronger colour/width.
-            HOP_EDGE_COLOR = (100, 120, 180)
-
-            def _arrowhead(color, src, dst):
-                """Draw an arrowhead on the line src→dst, just outside dst's node."""
-                dx, dy = dst[0] - src[0], dst[1] - src[1]
-                dist = math.hypot(dx, dy) or 1.0
-                ux, uy = dx / dist, dy / dist
-                tip = (dst[0] - ux * node_radius, dst[1] - uy * node_radius)
-                ang = math.atan2(uy, ux)
-                size = max(5, node_radius - 1)
-                left = (
-                    tip[0] - size * math.cos(ang - 0.5),
-                    tip[1] - size * math.sin(ang - 0.5),
-                )
-                right = (
-                    tip[0] - size * math.cos(ang + 0.5),
-                    tip[1] - size * math.sin(ang + 0.5),
-                )
-                pygame.draw.polygon(grid_surf, color, [tip, left, right])
-
-            seen_pairs: set = set()
-            for u in self.world_graph.all_nodes():
-                for v in self.world_graph.neighbors(u):
-                    a, b = (u, v) if u < v else (v, u)
-                    if (a, b) in seen_pairs:
-                        continue
-                    seen_pairs.add((a, b))
-                    in_hop = a in all_hop_nodes and b in all_hop_nodes
-                    color = HOP_EDGE_COLOR if in_hop else EDGE_COLOR
-                    width = 2 if in_hop else 1
-                    pa, pb = _px(a), _px(b)
-                    pygame.draw.line(grid_surf, color, pa, pb, width)
-                    fwd = self.world_graph.has_edge(a, b)
-                    rev = self.world_graph.has_edge(b, a)
-                    if fwd and not rev:
-                        _arrowhead(color, pa, pb)
-                    elif rev and not fwd:
-                        _arrowhead(color, pb, pa)
-
-            def _aa_circle(surf, color, pos, r):
-                x, y = pos
-                pygame.gfxdraw.filled_circle(surf, x, y, r, color)
-                pygame.gfxdraw.aacircle(surf, x, y, r, color)
-
-            def _aa_ring(surf, color, pos, r):
-                pygame.gfxdraw.aacircle(surf, pos[0], pos[1], r, color)
-
-            # Nodes: base circle — HOP_COLOR fill for reachable nodes
-            for nid in self.world_graph.all_nodes():
-                fill = HOP_COLOR if nid in all_hop_nodes else NODE_COLOR
-                _aa_circle(grid_surf, fill, _px(nid), node_radius)
-
-            # Food overlay
-            for nid, val in self.food.items():
-                ratio = max(0.0, min(1.0, float(val) / float(self._max_food_value)))
-                color = tuple(
-                    int(FOOD_LIGHT[i] + (FOOD_DARK[i] - FOOD_LIGHT[i]) * ratio)
-                    for i in range(3)
-                )
-                _aa_circle(grid_surf, color, _px(nid), node_radius)
-
-            # Artifact overlay
-            for nid, arts in self.pos_artifacts.items():
-                if arts:
-                    _aa_circle(grid_surf, ARTIFACT_COLOR, _px(nid), node_radius)
-
-            # Agent overlay
-            for agent in self.agent_registry:
-                _aa_circle(grid_surf, AGENT_COLOR, _px(self.agent_pos[agent]), node_radius)
-
-            # Node outlines on top — blue border for reachable nodes
-            for nid in self.world_graph.all_nodes():
-                outline = HOP_EDGE_COLOR if nid in all_hop_nodes else GRID_LINE_COLOR
-                _aa_ring(grid_surf, outline, _px(nid), node_radius)
+            self._place_missing_nodes()
+            grid_surf = self._draw_graph_surface(grid_pixel_w, grid_pixel_h)
 
         # --- RGB array output ---
         if mode == "rgb_array":
@@ -936,6 +920,130 @@ class OpenGraphWorld(BaseWorld):
         self._screen.blit(sidebar_surf, (grid_pixel_w, 0))  # type: ignore
         pygame.display.flip()
         return pygame.surfarray.array3d(grid_surf).transpose((1, 0, 2))
+
+    def _draw_graph_surface(self, width: int, height: int) -> pygame.Surface:
+        """Draw the non-grid graph. The cached layout is fitted to the canvas with
+        its aspect ratio kept. Beings are labelled by name, empty nodes by id on
+        small graphs. The drawing is made at RENDER_SCALE times the size and
+        scaled down, so edges, discs and text come out smooth."""
+        S = RENDER_SCALE
+        surf = pygame.Surface((width * S, height * S))
+        surf.fill(BG_COLOR)
+        nodes = self.world_graph.all_nodes()
+        n = len(nodes)
+        base_r = max(7, min(20, round(min(width, height) / (math.sqrt(n) * 5.0))))
+        margin = base_r * 1.6 + 16
+
+        layout = {nid: self._node_layout[nid] for nid in nodes}
+        xs = [p[0] for p in layout.values()]
+        ys = [p[1] for p in layout.values()]
+        span_x = max(max(xs) - min(xs), 1e-6)
+        span_y = max(max(ys) - min(ys), 1e-6)
+        scale = S * min((width - 2 * margin) / span_x, (height - 2 * margin) / span_y)
+        off_x = (width * S - span_x * scale) / 2 - min(xs) * scale
+        off_y = (height * S - span_y * scale) / 2 - min(ys) * scale
+        pos = {
+            nid: (float(x * scale + off_x), float(y * scale + off_y))
+            for nid, (x, y) in layout.items()
+        }
+
+        # Shrink the nodes so the two closest ones do not overlap.
+        radius = float(base_r * S)
+        if 1 < n <= 800:
+            pts = np.array([pos[nid] for nid in nodes])
+            dists = np.hypot(pts[:, None, 0] - pts[None, :, 0], pts[:, None, 1] - pts[None, :, 1])
+            np.fill_diagonal(dists, np.inf)
+            radius = max(5.0 * S, min(radius, 0.45 * float(dists.min())))
+
+        ref_energy = float(self.init_agent_energy)
+        radii = {}
+        for nid in nodes:
+            agents = self.pos_to_agent.get(nid, set())
+            energy = max((self.agent_energy.get(a, ref_energy) for a in agents), default=None)
+            radii[nid] = radius if energy is None else _energy_radius(radius, energy, ref_energy)
+
+        # Reachable nodes are emphasised only when they are a strict subset.
+        hop_nodes: set = set()
+        for agent in self.agent_registry:
+            hop_nodes.update(
+                self.world_graph.nodes_within_hops(self.agent_pos[agent], self.hop_radius)
+            )
+        emphasise = 0 < len(hop_nodes) < n
+
+        # Edges. Each unordered pair is drawn once. A one-way edge gets an
+        # arrowhead at its destination.
+        line_w = int(1.5 * S)
+        seen_pairs: set = set()
+        for u in nodes:
+            for v in self.world_graph.neighbors(u):
+                a, b = (u, v) if u < v else (v, u)
+                if (a, b) in seen_pairs:
+                    continue
+                seen_pairs.add((a, b))
+                fwd = self.world_graph.has_edge(a, b)
+                rev = self.world_graph.has_edge(b, a)
+                if emphasise and a in hop_nodes and b in hop_nodes:
+                    color = arrow_color = ACCENT_COLOR
+                elif fwd and rev:
+                    color = arrow_color = EDGE_COLOR
+                else:
+                    color, arrow_color = ONE_WAY_EDGE_COLOR, ARROW_COLOR
+                pygame.draw.line(surf, color, pos[a], pos[b], line_w)
+                if fwd and not rev:
+                    _arrowhead(surf, arrow_color, pos[a], pos[b], radii[b] + S, 7 * S)
+                elif rev and not fwd:
+                    _arrowhead(surf, arrow_color, pos[b], pos[a], radii[a] + S, 7 * S)
+
+        # Nodes. A background disc under each node keeps it clear of the edges.
+        # Beings that broadcast this step get an accent ring. Artifacts, and food
+        # under a being, are small badges.
+        speakers = set(self.chat_senders.get(self.step_count - 1, []))
+        for nid in nodes:
+            p, r = pos[nid], radii[nid]
+            agents = sorted(self.pos_to_agent.get(nid, set()))
+            food = self.food.get(nid, 0.0)
+            _aa_disc(surf, BG_COLOR, p, r + 2 * S)
+            if agents:
+                _aa_disc(surf, _agent_fill_color(self.agent_colors.get(agents[0])), p, r)
+                if speakers.intersection(agents):
+                    _aa_ring(surf, ACCENT_COLOR, p, r + 3 * S, int(1.5 * S))
+            elif food:
+                _aa_disc(surf, _food_color(food, self._max_food_value), p, r)
+            else:
+                _aa_disc(surf, EMPTY_NODE_COLOR, p, r)
+                _aa_ring(surf, NODE_OUTLINE_COLOR, p, r, int(1.2 * S))
+            badge_r = max(3 * S, r * 0.38)
+            if self.pos_artifacts.get(nid):
+                badge = (p[0] + r * 0.75, p[1] - r * 0.75)
+                _aa_disc(surf, BG_COLOR, badge, badge_r + S)
+                _aa_disc(surf, ARTIFACT_COLOR, badge, badge_r)
+            if agents and food:
+                badge = (p[0] - r * 0.75, p[1] + r * 0.75)
+                _aa_disc(surf, BG_COLOR, badge, badge_r + S)
+                _aa_disc(surf, FOOD_DARK, badge, badge_r)
+
+        # Labels, on a translucent background strip so they stay readable.
+        for nid in nodes:
+            agents = sorted(self.pos_to_agent.get(nid, set()))
+            if agents:
+                names = [self.agent_names.get(a, a) for a in agents]
+                text = ", ".join(names[:2]) + (f" +{len(names) - 2}" if len(names) > 2 else "")
+                text_surf = self._font_label.render(text, True, INK_COLOR)
+            elif n <= MAX_LABELLED_NODES:
+                text_surf = self._font_node_id.render(str(nid), True, INK_MUTED_COLOR)
+            else:
+                continue
+            p, r = pos[nid], radii[nid]
+            x = int(p[0] - text_surf.get_width() / 2)
+            y = int(p[1] + r + 2 * S)
+            halo = pygame.Surface(
+                (text_surf.get_width() + 4 * S, text_surf.get_height()), pygame.SRCALPHA
+            )
+            halo.fill((*BG_COLOR, 215))
+            surf.blit(halo, (x - 2 * S, y))
+            surf.blit(text_surf, (x, y))
+
+        return pygame.transform.smoothscale(surf, (width, height))
 
     # ---------- checkpointing ----------
 

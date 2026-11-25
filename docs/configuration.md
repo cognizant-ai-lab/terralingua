@@ -109,6 +109,7 @@ Unknown fields fail validation.
 Dictionary settings allow their own keys.
 For example, `run.scenario_options.seed` targets the selected runner's options.
 That runner validates the option's meaning at startup.
+`run.mechanics` maps a mechanic's module path to its options, for example `terralingua.mechanics.library`; each module validates its own options at startup.
 
 Relative paths inside presets resolve against the preset directory.
 Builtin instruction names remain unchanged.
@@ -231,3 +232,30 @@ It does not hash prompt files, external configuration, or checkpoint state.
 Artifact creation uses `env.artifact_creation_cost`: `-1` disables creation,
 `0` makes it free, and positive values charge that much energy.
 This setting does not disable access to existing or seeded artifacts.
+
+## Communication and shared libraries
+
+Each action carries a `messages` object alongside its `action` and `params`:
+
+```json
+{"action": "noop", "params": {}, "messages": {"broadcast": "Hello everyone", "Ada": "A private note"}}
+```
+
+`broadcast` addresses the being's audience; other keys name individual recipients
+available to that being. Private messages accompany any action. Set
+`env.allow_broadcasts: false` for private communication only. Each message has its
+own `env.max_message_length` token limit. The former `message` string,
+`send_direct_message` action and `env.graph.direct_message_cost` setting are
+replaced by this interface.
+
+To enable the shared artifact library, attach `terralingua.mechanics.library`
+through `run.mechanics`, as shown in [the scenario guide](writing_a_scenario.md).
+The library works in all world types and is opt-in. The former `env.use_library`
+and `env.library_preview` fields have been removed; library options belong under
+the mechanic's module key.
+
+Version 0.3.0 requires fresh runs when upgrading from earlier versions;
+checkpoints from earlier versions are not supported. Update presets and clients
+to use the settings and `messages` interface above. The library's metadata
+listing and read/search actions replace the former content-preview option.
+Runs started with 0.3.0 can be resumed normally.

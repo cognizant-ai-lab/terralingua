@@ -9,6 +9,10 @@ import litellm
 from dotenv import find_dotenv, load_dotenv
 from litellm import ModelResponse
 from litellm.exceptions import BadRequestError
+from litellm.integrations.anthropic_cache_control_hook import (
+    supports_openai_prompt_cache_breakpoint,
+    targets_openai_api,
+)
 
 load_dotenv(find_dotenv(usecwd=True), override=True)
 
@@ -23,6 +27,8 @@ class Response:
     input_tokens: int
     output_tokens: int
     cost: float = 0.0
+    cached_input_tokens: int | None = None
+    cache_write_input_tokens: int | None = None
 
 
 def _response_cost(resp: ModelResponse) -> float:
@@ -62,26 +68,67 @@ def _extract_json(
     return None, "Error: No valid JSON found in response"
 
 
-def _cache_system_messages(messages: list[dict]) -> list[dict]:
-    """Wrap plain-string system message content in an Anthropic cache_control block."""
-    result = []
-    for msg in messages:
-        if msg["role"] == "system" and isinstance(msg.get("content"), str):
-            result.append(
-                {
-                    "role": "system",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": msg["content"],
-                            "cache_control": {"type": "ephemeral"},
-                        }
-                    ],
-                }
-            )
-        else:
-            result.append(msg)
+def _cache_instruction_prefix(
+    messages: list[dict], key: str, marker: dict
+) -> list[dict]:
+    """Cache the complete leading instructions using one additional breakpoint.
+
+    Accept string and block content without mutating callers' messages. Keeping
+    the boundary before the first user turn avoids paying to cache observations
+    that change each turn. Existing explicit markers/options remain intact.
+    """
+    target = None
+    for index, msg in enumerate(messages):
+        if msg["role"] not in ("system", "developer"):
+            break
+        content = msg.get("content")
+        if isinstance(content, str) and content:
+            target = (index, [{"type": "text", "text": content}])
+        elif isinstance(content, list) and content:
+            if content[-1].get("type") == "text":
+                target = (index, content)
+    if target is None:
+        return messages
+    index, blocks = target
+    blocks = [*blocks[:-1], {**blocks[-1]}]
+    blocks[-1].setdefault(key, marker)
+    result = list(messages)
+    result[index] = {**messages[index], "content": blocks}
     return result
+
+
+def _cache_system_messages(messages: list[dict]) -> list[dict]:
+    return _cache_instruction_prefix(messages, "cache_control", {"type": "ephemeral"})
+
+
+def _cache_openai_system_messages(messages: list[dict]) -> list[dict]:
+    """Mark the stable instruction prefix, leaving changing user input uncached."""
+    return _cache_instruction_prefix(
+        messages, "prompt_cache_breakpoint", {"mode": "explicit"}
+    )
+
+
+def _cache_usage(resp: ModelResponse) -> dict:
+    """Keep provider cache counts; absent telemetry is unknown, not a cache miss."""
+    usage = resp.usage
+    details = getattr(usage, "prompt_tokens_details", None)
+
+    def count(name, fallback):
+        value = (
+            details.get(name)
+            if isinstance(details, dict)
+            else getattr(details, name, None)
+        )
+        if not isinstance(value, int):
+            value = getattr(usage, fallback, None)
+        return value if isinstance(value, int) else None
+
+    return {
+        "cached_input_tokens": count("cached_tokens", "cache_read_input_tokens"),
+        "cache_write_input_tokens": count(
+            "cache_write_tokens", "cache_creation_input_tokens"
+        ),
+    }
 
 
 class LLMClient:
@@ -262,15 +309,35 @@ class AgentClient:
     def _build_kwargs(self, messages: list[dict], chat_params: dict) -> dict:
         model = chat_params.get("model", "")
         params = {k: v for k, v in chat_params.items() if k != "model"}
+        base_url = self._extra_kwargs.get("base_url", params.get("base_url"))
 
-        if self.provider == "anthropic":
+        if self.provider == "anthropic" or (
+            self.provider == "auto" and model.startswith("anthropic/")
+        ):
             # reasoning_effort stays in params: litellm maps it to Anthropic
             # adaptive thinking + output_config.effort (Opus 4.6+/Sonnet 4.6).
-            model = f"anthropic/{model}"
+            model = f"anthropic/{model.removeprefix('anthropic/')}"
             messages = _cache_system_messages(messages)
-        elif self._extra_kwargs.get("base_url"):
+        elif base_url and not targets_openai_api(base_url):
             # Local OpenAI-compatible endpoint (vLLM) — prefix required by litellm
-            model = f"openai/{model}"
+            model = f"openai/{model.removeprefix('openai/')}"
+
+        elif (
+            (
+                self.provider == "openai"
+                or (self.provider == "auto" and model.startswith("openai/"))
+            )
+            and targets_openai_api(
+                self._extra_kwargs.get("api_base", params.get("api_base", base_url))
+            )
+            and supports_openai_prompt_cache_breakpoint(model)
+        ):
+            cached_messages = _cache_openai_system_messages(messages)
+            if cached_messages is not messages:
+                messages = cached_messages
+                params.setdefault(
+                    "prompt_cache_options", {"mode": "explicit", "ttl": "30m"}
+                )
 
         return {"model": model, "messages": messages, **params, **self._extra_kwargs}
 
@@ -285,6 +352,7 @@ class AgentClient:
             input_tokens=resp.usage.prompt_tokens or 0,
             output_tokens=resp.usage.completion_tokens or 0,
             cost=_response_cost(resp),
+            **_cache_usage(resp),
         )
 
     async def get_response_async(
@@ -298,4 +366,5 @@ class AgentClient:
             input_tokens=resp.usage.prompt_tokens or 0,
             output_tokens=resp.usage.completion_tokens or 0,
             cost=_response_cost(resp),
+            **_cache_usage(resp),
         )

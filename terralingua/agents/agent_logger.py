@@ -107,6 +107,7 @@ class AgentLogger:
         time: str,
         internal_memory: str,
         input_prompt: str,
+        model: str | None = None,
     ):
         """
         Record the agent’s observation and action, both in a live file and in-memory dictionary.
@@ -116,7 +117,6 @@ class AgentLogger:
         }
 
         record = {
-            "timestamp": time,
             "agent": agent_name,
             "agent_tag": agent_tag,
             "action": action,
@@ -125,9 +125,11 @@ class AgentLogger:
             "available_actions": available_actions,
             "input_prompt": input_prompt,
         }
+        if model is not None:
+            record["model"] = model
 
         # Save line to file — via async queue when available, else direct write.
-        line = json.dumps(record) + "\n"
+        line = json.dumps({"timestamp": time, **record}) + "\n"
         if _write_queue is not None:
             _write_queue.put_nowait((self.filename, line))
         else:
@@ -135,15 +137,7 @@ class AgentLogger:
                 f.write(line)
 
         # Save to internal dict
-        self.data_dict[time] = {
-            "agent": agent_name,
-            "agent_tag": agent_tag,
-            "action": action,
-            "internal_memory": internal_memory,
-            "available_actions": available_actions,
-            "observation": observation,
-            "input_prompt": input_prompt,
-        }
+        self.data_dict[time] = record
 
     def close(self):
         return

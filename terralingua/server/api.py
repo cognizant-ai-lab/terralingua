@@ -57,6 +57,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
 from wonderwords import RandomWord
 
+from terralingua.experiment.llm_router import LLMRouter
 from terralingua.server.auth import decrypt_api_key, encrypt_api_key
 from terralingua.server.graph_history import get_social_graph_history
 from terralingua.server.models import (
@@ -391,7 +392,7 @@ def _ws_caller_id(user_id: str | None, msg: dict) -> str | None:
     return None
 
 
-STAY_ACTION = {"action": "move", "message": "", "params": {"direction": "stay"}}
+STAY_ACTION = {"action": "move", "messages": {}, "params": {"direction": "stay"}}
 
 # Cross-worker bg-loop ownership lock TTL (seconds). Refreshed at TTL/2 by the loop
 # while alive; on worker SIGKILL the key naturally expires within this window so a
@@ -433,6 +434,17 @@ async def _publish_anthro_error(
         await redis.publish(CHANNEL_PUSH, json.dumps(payload))
     except Exception as e:
         logger.warning("anthro_error publish failed: %s", e)
+
+
+def _dashboard_child_model(parent_model: str, chosen_model: str | None) -> str:
+    """Resolve the child's model for a background loop using its parent's API key."""
+    if chosen_model is None or chosen_model == parent_model:
+        return parent_model
+    model, provider = LLMRouter.resolve_model(chosen_model)
+    _, parent_provider = LLMRouter.resolve_model(parent_model)
+    if provider != parent_provider or provider not in ("openai", "anthropic"):
+        raise ValueError(f"The parent's API key cannot drive the selected model {model}.")
+    return model
 
 
 async def _log_api_error(redis, agent_tag: str, error_type: str, message: str) -> None:
@@ -488,9 +500,10 @@ def parse_agent_action(text: str, available_actions: dict) -> dict:
                 "source": "default",
                 "default_reason": "invalid_action",
             }
+        messages = data.get("messages", {})
         parsed = {
             "action": action,
-            "message": data.get("message", ""),
+            "messages": messages if isinstance(messages, dict) else {},
             "params": data.get("params", {}),
             "internal_memory": data.get("internal_memory", ""),
             "source": "llm",
@@ -766,6 +779,8 @@ def create_app(
                     action = parse_agent_action(
                         resp.content, payload.get("available_actions", {})
                     )
+                    if action.get("action") == "spawn" and "offspring_model" in action["params"]:
+                        _dashboard_child_model(model, action["params"]["offspring_model"])
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
@@ -923,7 +938,7 @@ def create_app(
                             continue
                         try:
                             bg_info = json.loads(bg_raw)
-                            model = bg_info.get("model") or "claude-sonnet-4-5"
+                            parent_model = bg_info.get("model") or "claude-sonnet-4-5"
                         except Exception:
                             continue
                         if "user_id" in bg_info:
@@ -935,11 +950,6 @@ def create_app(
                                 continue
                             api_key = decrypt_api_key(user.encrypted_api_key)
                             await app.state.registry.set_owner(child_tag, user_id)
-                            # _activate_server_llm logs "Started …" only on the
-                            # SETNX-winning worker; the others no-op silently.
-                            await _activate_server_llm(
-                                app.state, child_tag, user_id, model, api_key
-                            )
                         elif "anon_id" in bg_info:
                             # Anonymous parent — child inherits the anon_id and
                             # the Fernet-encrypted API key stashed in Redis.
@@ -966,18 +976,21 @@ def create_app(
                             await r.expire(
                                 f"ogw:anon:{anon_id}:agents", ANON_HEARTBEAT_TTL
                             )
-                            # _activate_server_llm logs "Started …" only on the
-                            # SETNX-winning worker; the others no-op silently.
-                            await _activate_server_llm(
-                                app.state,
-                                child_tag,
-                                None,
-                                model,
-                                api_key,
-                                anon_id=anon_id,
-                            )
                         else:
                             continue
+                        try:
+                            model = _dashboard_child_model(parent_model, data.get("model"))
+                        except ValueError as error:
+                            await _log_api_error(r, child_tag, "offspring_model", str(error))
+                            await r.publish(CHANNEL_PUSH, json.dumps({
+                                "type": "agent_api_error", "agent_tag": child_tag,
+                                "error_type": "offspring_model", "error_message": str(error),
+                            }))
+                            continue
+                        await _activate_server_llm(
+                            app.state, child_tag, bg_info.get("user_id"), model, api_key,
+                            anon_id=bg_info.get("anon_id"),
+                        )
                 finally:
                     await pubsub.aclose()
                     await r.aclose()

@@ -2,7 +2,7 @@
 
 {% block world_intro %}You are {{ agent_name }}, an autonomous agent{% if not solo %} in a network of other agents{% endif %}.{% endblock %}
 
-{% block observation_section %}Each step provides your current state and a history of past observations and actions.
+{% block observation_section %}Each turn provides your current state, what you received since your previous turn, and a history of your past turns.
 {% if solo %}Your observation lists your visible public artifacts.
 {% else %}Your social observation lists you, agents you follow, and visible public artifact names.
 Your network summary lists following relationships, pending requests, and suggested connections.
@@ -10,20 +10,16 @@ Your network summary lists following relationships, pending requests, and sugges
 {% if artifact_creation %}Artifact entries show their type, whether they are movable or fixed, and their name.
 {% if not solo %}Seeing another agent's artifact name does not grant access; use your available actions.{% endif %}{% endif %}{% endblock %}
 
-{% block energy_decay_rule %}You lose {{ energy_upkeep | default(1) }} energy each turn, whatever you do.{% endblock %}
+{% block energy_decay_rule %}You lose {{ energy_upkeep | default(1) }} energy each step, whatever you do.{% endblock %}
 {% block energy_refill_rule %}receiving food. Food restores energy equal to its value and then disappears{% endblock %}
 
 {% block communication_section %}- Communication
-    - You can broadcast to your followers alongside your chosen action each turn.
-    - You receive broadcasts from agents you follow.
-    - Use `send_direct_message` to privately contact one agent you follow. Only that agent receives it.
-    - Sending a direct message uses your action for that turn.
-    - Broadcast messages are limited to {{ max_message_length }} tokens{% if finite_energy | default(true) %} and cost no energy{% endif %}.
+    - Each turn, next to your action, you can send messages. They are plain text{% if finite_energy | default(true) %}, cost no energy{% endif %} and do not use your action.
+    - In the `messages` object of your reply, each key names the receiver and each value is the text.{% if allow_broadcasts | default(true) %}
+    - The key `broadcast` sends the text to your followers. You receive the broadcasts of the agents you follow.{% endif %}
+    - The name of an agent you follow sends the text to that agent only. You are told when a message is not delivered.
+    - {% if (max_message_length | default(0)) > 0 %}Each message is limited to {{ max_message_length }} tokens. {% endif %}Leave out the messages you do not want to send.
 {% endblock %}
-
-{% block memory_section %}- Internal memory
-    - Write INTERNAL MEMORY each turn. It is returned to you next turn.
-    - Keep it within {{ internal_memory_size }} tokens, using any format you find useful.{% endblock %}
 
 {% block artifact_section %}- Artifacts
     - Your available actions show which artifacts you can use.

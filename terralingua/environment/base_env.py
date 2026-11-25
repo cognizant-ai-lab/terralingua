@@ -31,7 +31,7 @@ from typing import Any, Callable, Dict, List, Set, Tuple
 
 import numpy as np
 import pygame
-import tiktoken
+from jsonschema import ValidationError, validate
 from pygame.font import Font
 
 from terralingua.environment.actions import (
@@ -42,6 +42,7 @@ from terralingua.environment.actions import (
 )
 from terralingua.environment.artifact import (
     ARTIFACT_TYPES,
+    ENCODER,
     MAX_TEXT_ARTIFACT_SIZE,
     Artifact,
     ArtifactCreationError,
@@ -53,9 +54,27 @@ from terralingua.environment.mechanic import Mechanic
 from terralingua.environment.roles import RolesMixin
 from terralingua.utils.logging_setup import logger_level
 
-log = logging.getLogger(__name__)
+# Texts the beings read about their messages. BROADCAST_KEY is the key of the
+# reply's `messages` object that addresses everyone who can hear the sender.
+BROADCAST_KEY = "broadcast"
+BROADCASTS_OFF = "Broadcasts are not possible in this world. Your broadcast was not sent."
+BROADCAST_CUT = (
+    'Your broadcast was longer than {limit} tokens and was cut off after "...{tail}". '
+    "Only that part reached the others."
+)
+PRIVATE_CUT = (
+    "Your message to {receiver} was longer than {limit} tokens and was cut off after "
+    '"...{tail}". Only that part was delivered.'
+)
+NOT_DELIVERED = "Your message to {receiver} was not delivered: {reason}"
+MESSAGES_MALFORMED = (
+    "Your message was wrongly formatted. Nothing was sent. Expected format: "
+    '"messages": {"broadcast": "text for everyone who hears you", "Name": "text for one being"}'
+)
+NO_SUCH_BEING = "there is no being named {receiver}."
+SELF_MESSAGE = "you cannot message yourself."
 
-_msg_encoder = tiktoken.get_encoding("cl100k_base")
+log = logging.getLogger(__name__)
 
 
 def _collapse_repeats(items: List[str]) -> List[str]:
@@ -78,6 +97,7 @@ class BaseWorld(RolesMixin, ABC):
 
     system_prompt_template = "_base.j2"
     _LOG_FILENAME: str = "env.log"
+    out_of_reach_text = "{name} is out of your perception range."
 
     @property
     def stay_action(self) -> dict:
@@ -88,7 +108,7 @@ class BaseWorld(RolesMixin, ABC):
         own no-op. Consumers (runner defaults, voting overrides) read it here
         instead of hardcoding an action, so it always matches the world.
         """
-        return {"action": "move", "message": "", "params": {"direction": "stay"}}
+        return {"action": "move", "messages": {}, "params": {"direction": "stay"}}
 
     @property
     def energy_upkeep(self) -> int:
@@ -110,8 +130,6 @@ class BaseWorld(RolesMixin, ABC):
         log_path: Path | str | None = None,
         drop_food_on_death: bool = True,
         use_inventory: bool = False,
-        use_library: bool = False,
-        library_preview: bool = True,
         allow_fixed_artifacts: bool = True,
         max_artifact_tokens: int = MAX_TEXT_ARTIFACT_SIZE,
         use_colors: bool = False,
@@ -132,9 +150,11 @@ class BaseWorld(RolesMixin, ABC):
         excluded_actions: List[str] | None = None,
         headless: bool = False,
         max_message_length: int = 200,
+        allow_broadcasts: bool = True,
         exclusive_pos_occupancy: bool = True,
         roles_hocon_path: str | None = None,
         affordances_file_path: str | None = None,
+        offspring_model_choices: tuple[str, ...] = (),
     ):
         self.verbose = verbose
         logging.getLogger(__name__).setLevel(logger_level(verbose))
@@ -145,8 +165,6 @@ class BaseWorld(RolesMixin, ABC):
         self.lifespan = lifespan
         self.drop_food_on_death = drop_food_on_death
         self.use_inventory = use_inventory
-        self.use_library = use_library
-        self.library_preview = library_preview
         self.allow_fixed_artifacts = allow_fixed_artifacts
         self.max_artifact_tokens = max_artifact_tokens
         self.use_colors = use_colors
@@ -157,6 +175,7 @@ class BaseWorld(RolesMixin, ABC):
         ):
             raise ValueError("reproduction_cost must be an integer at least -1.")
         self.reproduction_cost = reproduction_cost
+        self.offspring_model_choices = offspring_model_choices
         self.artifact_creation_cost = artifact_creation_cost
         self.inert_artifacts = inert_artifacts
         self.show_nearby_artifact_names = show_nearby_artifact_names
@@ -188,13 +207,14 @@ class BaseWorld(RolesMixin, ABC):
         self.external_actions_spec: dict = external_actions_spec or {}
         self.excluded_actions = set(excluded_actions) if excluded_actions else set()
         self.max_message_length = max_message_length
+        self.allow_broadcasts = allow_broadcasts
         self.agent_genomes: Dict[str, str] = {}
         self.log_path = Path(log_path) if log_path is not None else Path(".")
         self.logger = JSONLogger(self.log_path / self._LOG_FILENAME)
 
         # Runtime state
         # ---------------------------
-        self.rng: np.random.Generator | None = None
+        self.rng = np.random.default_rng()
 
         self.food: Dict = {}
         self.food_count: List[float] = []
@@ -203,7 +223,6 @@ class BaseWorld(RolesMixin, ABC):
         self.artifacts: Dict[str, Artifact] = {}
         self.pos_artifacts: Dict = defaultdict(set)
         self.agent_inventories: Dict[str, Set[str]] = defaultdict(set)
-        self.library: Set[str] = set()
         self.artifact_location: Dict[str, tuple] = {}
         self.expired_artifacts: List[Artifact] = []
         self._all_artifact_names: Set[str] = (
@@ -219,6 +238,7 @@ class BaseWorld(RolesMixin, ABC):
         self.agent_excluded_actions: Dict[str, set] = {}
         self.agent_energy: Dict[str, float] = {}
         self.agent_time: Dict[str, float] = {}
+        self.agent_lifespan: Dict[str, float] = {}
         self.agent_spawn: Dict[str, List[str]] = {}
         self.agent_names: Dict[str, str] = {}
         self._pending_kills: Dict[str, str | None] = {}
@@ -254,6 +274,10 @@ class BaseWorld(RolesMixin, ABC):
         self.chat_senders: Dict[int, List[str]] = {}
         # step -> sender_tag -> set of receiver tags (who had sender in vision that step)
         self.chat_recipients: Dict[int, Dict[str, Set[str]]] = {}
+        # private messages of the current step: receiver tag -> {sender name: text}
+        self.private_messages: Dict[str, Dict[str, str]] = {}
+        # step -> ["Sender -> Receiver: text", ...]
+        self.private_chat: Dict[int, List[str]] = {}
         self.agent_registry: Set[str] = set()
         self.step_count: int = 0
         # ---------------------------
@@ -288,6 +312,59 @@ class BaseWorld(RolesMixin, ABC):
         if self.agent_energy[agent] < self.reproduction_cost + gift:
             return "Not enough energy"
         return None
+
+    # ---------- artifact placement ----------
+    def _unlink_artifact(self, art_name: str) -> None:
+        """Take an artifact out of the place its location names."""
+        kind, where = self.artifact_location.get(art_name, (None, None))
+        if kind == "map":
+            self.pos_artifacts[where].discard(art_name)
+        elif kind == "inv":
+            self.agent_inventories[where].discard(art_name)
+
+    def place_artifact(self, art_name: str, pose) -> None:
+        """Put an existing artifact on a cell or node."""
+        self._unlink_artifact(art_name)
+        self.artifacts[art_name].pose = pose
+        self.pos_artifacts[pose].add(art_name)
+        self.artifact_location[art_name] = ("map", pose)
+
+    def stow_artifact(self, art_name: str, agent_tag: str) -> None:
+        """Put an existing artifact in a being's inventory."""
+        self._unlink_artifact(art_name)
+        self.artifacts[art_name].pose = f"Inv({agent_tag})"
+        self.agent_inventories[agent_tag].add(art_name)
+        self.artifact_location[art_name] = ("inv", agent_tag)
+
+    def detach_artifact(self, art_name: str, holder: str) -> None:
+        """Take an existing artifact off the map and out of every inventory. It
+        stays in `artifacts` as held by `holder`, the name of a mechanic. No being
+        can reach it, and the world no longer ages it. The holder ages it, and
+        places or stows it again."""
+        self._unlink_artifact(art_name)
+        self.artifacts[art_name].pose = "stored"
+        self.artifact_location[art_name] = ("stored", holder)
+
+    def age_artifact(self, art_name: str) -> bool:
+        """Count one step of life for an artifact. False when its time is over."""
+        artifact = self.artifacts[art_name]
+        if artifact.creation_time != self.step_count:
+            artifact.remaining_time -= 1
+        return artifact.remaining_time > 0
+
+    def expire_artifact(self, art_name: str, **fields) -> None:
+        """Remove an artifact for good. `fields` go to the ARTIFACT_REMOVED event."""
+        self._unlink_artifact(art_name)
+        artifact = self.artifacts.pop(art_name)
+        self.artifact_location.pop(art_name, None)
+        artifact.deletion_time = self.step_count
+        self.expired_artifacts.append(artifact)
+        self.logger.log(
+            time=self.step_count,
+            event_type=Event.ARTIFACT_REMOVED,
+            artifact=artifact.serialize(),
+            **fields,
+        )
 
     # ---------- public helpers ----------
     def add_agent(
@@ -327,9 +404,13 @@ class BaseWorld(RolesMixin, ABC):
                 position=self.agent_pos[agent_tag],
                 agent_name=self.agent_names[agent_tag],
             )
+        for mechanic in self.mechanics:
+            mechanic.on_birth(self, agent_tag)
         observation, has_nearby = self._build_obs(agent_tag)
         avail_actions = self._get_avail_actions(agent_tag, nearby_agents=has_nearby)
         info = {"available_actions": avail_actions}
+        info.update(self.pending_notes(agent_tag))
+        self._notes.pop(agent_tag, None)
         return observation, info
 
     def add_artifact(
@@ -361,7 +442,10 @@ class BaseWorld(RolesMixin, ABC):
 
         self.agent_energy[creator] -= self.artifact_creation_cost
         self.artifacts[art_name] = artifact
-        self._place_new_artifact(art_name, pose, to_inventory)
+        if to_inventory is None:
+            self.place_artifact(art_name, pose)
+        else:
+            self.stow_artifact(art_name, to_inventory)
         self._all_artifact_names.add(art_name)
 
         if self.logger:
@@ -374,7 +458,48 @@ class BaseWorld(RolesMixin, ABC):
                 agent_name=self.agent_names[creator],
             )
         where = f"in the inventory of {to_inventory}" if to_inventory else f"at position {pose}"
-        return f"Created artifact {art_name} of type {art_type} {where}."
+        status = f"Created artifact {art_name} of type {art_type} {where}."
+        return status
+
+    def external_action_error(
+        self, agent_tag: str, action: str, params: dict
+    ) -> str | None:
+        """Validate an MCP call against the agent's current permissions and resources."""
+        if agent_tag not in self.agent_registry:
+            return "The agent is no longer in the world."
+        if not isinstance(action, str) or action not in self.external_actions_spec:
+            return f"'{action}' is not an external MCP action."
+        cost = self.external_actions_spec[action]["cost"]
+        if self.agent_energy[agent_tag] < cost:
+            return f"Not enough energy for '{action}'. Required: {cost}."
+        spec = self._get_avail_actions(agent_tag, cache=False).get(action)
+        if spec is None:
+            return f"External action '{action}' is not currently available to the agent."
+        if not isinstance(params, dict):
+            return f"Parameters for '{action}' must be a JSON object."
+        schema = spec.get("input_schema")
+        expected = set(spec.get("params", {}))
+        optional = (
+            expected - set(schema.get("required", []))
+            if isinstance(schema, dict)
+            else set(spec.get("optional", []))
+        )
+        missing = expected - optional - params.keys()
+        unexpected = params.keys() - expected
+        if missing or unexpected:
+            return (
+                f"Invalid parameters for '{action}'. "
+                + (f"Missing: {', '.join(sorted(missing))}. " if missing else "")
+                + (f"Unexpected: {', '.join(sorted(unexpected))}." if unexpected else "")
+            ).strip()
+        if isinstance(schema, dict):
+            try:
+                validate(params, schema)
+            except ValidationError as exc:
+                path = "/".join(str(part) for part in exc.absolute_path)
+                location = f"params/{path}" if path else "params"
+                return f"Invalid {location} for '{action}': {exc.message}"
+        return None
 
     def seed_artifact(
         self, pose, art_type, art_name, payload, lifespan, movable: bool = True,
@@ -404,7 +529,10 @@ class BaseWorld(RolesMixin, ABC):
             return str(e), None
 
         self.artifacts[art_name] = artifact
-        self._place_new_artifact(art_name, pose, to_inventory)
+        if to_inventory is None:
+            self.place_artifact(art_name, pose)
+        else:
+            self.stow_artifact(art_name, to_inventory)
         self._all_artifact_names.add(art_name)
 
         if self.logger:
@@ -449,10 +577,11 @@ class BaseWorld(RolesMixin, ABC):
         self.chat = {}
         self.chat_senders = {}
         self.chat_recipients = {}
+        self.private_messages = {}
+        self.private_chat = {}
         self.food_count = []
         self.agent_inventories = defaultdict(set)
         self.pos_artifacts = defaultdict(set)
-        self.library = set()
         self.artifacts = {}
         self.artifact_location = {}
         self.expired_artifacts = []
@@ -499,7 +628,13 @@ class BaseWorld(RolesMixin, ABC):
                     agent_tag=agent_tag
                 )
             observations = {a: self._build_obs(a)[0] for a in self.agent_registry}
+        self.stamp_turn(observations)
         return observations, infos
+
+    def stamp_turn(self, observations: dict) -> None:
+        """Write the turn the being decides in, the runner's timestep, on each observation."""
+        for obs in observations.values():
+            obs["step"] = self.step_count
 
     # ---------- core mechanics ----------
     def step(
@@ -512,22 +647,26 @@ class BaseWorld(RolesMixin, ABC):
         Dict[str, Any],
     ]:
         """
-        `actions` may omit some agents (those on cooldown, etc.).
-        Missing agents simply keep previous message and perform no move.
+        `actions` may omit some agents.
+        Missing agents perform no move and send no message this step.
         """
 
         # ---- default bookkeeping ----
+        self.msg_raw = {}
         rewards = {a: 0.0 for a in self.agent_registry}
         infos = {a: {} for a in self.agent_registry}
         done_dict = {a: False for a in self.agent_registry}
+        self.private_messages = {}
         self.transfers = []
         self.deaths, self._new_deaths = self._new_deaths, []
         self.departures, self._new_departures = self._new_departures, []
         self._ensure_initial_roles()
 
-        # ---- Process actions from acting agents ----
+        # ---- Process actions from acting agents, in a random order ----
         # ================================
-        for agent, act in actions.items():
+        ordered = list(actions.items())
+        ordered = [ordered[i] for i in self.rng.permutation(len(ordered))]
+        for agent, act in ordered:
             if agent not in self.agent_registry:
                 raise ValueError(
                     f"Agent {self.agent_names[agent]}({agent}) not found in the environment."
@@ -536,29 +675,12 @@ class BaseWorld(RolesMixin, ABC):
             # move_params is set when action_name == "move"; None otherwise
             move_params = None
 
-            # Get action name, message and params
+            # Get action name and params; deliver the messages of the turn,
+            # whatever the action turns out to be.
             # ---------------------------
             action_name = act.get("action", "move")
-            message = act.get("message", "")
-            if self.max_message_length > 0:
-                tokens = _msg_encoder.encode(message)
-                if len(tokens) > self.max_message_length:
-                    message = _msg_encoder.decode(tokens[: self.max_message_length])
-                    tail = " ".join(message.split()[-6:])
-                    infos[agent]["Message outcome"] = (
-                        f"Your message was longer than {self.max_message_length} "
-                        f'tokens and was cut off after "...{tail}". Only that part '
-                        "reached the others."
-                    )
             action_params = act.get("params", {})
-
-            # Record message regardless of action validity
-            self.msg_raw[agent] = message
-            if len(message):
-                self.chat.setdefault(self.step_count, list()).append(
-                    f"{self.agent_names[agent]}: {message}"
-                )
-                self.chat_senders.setdefault(self.step_count, list()).append(agent)
+            self.send_messages(agent, act.get("messages") or {}, infos[agent])
 
             if action_name not in self.agent_avail_actions[agent]:
                 if self.agent_avail_actions[agent]:
@@ -650,7 +772,7 @@ class BaseWorld(RolesMixin, ABC):
             # ---------------------------
 
             # Env-class custom actions (e.g. social_graph's connect/disconnect/
-            # noop/send_direct_message). Run when no node affordance claimed
+            # noop). Run when no node affordance claimed
             # the action; supersede any built-in action with the same name.
             # ---------------------------
             elif self._on_env_action(agent, action_name, action_params, infos):
@@ -667,9 +789,10 @@ class BaseWorld(RolesMixin, ABC):
             # that action's own per-server cost.
             # ---------------------------
             elif action_name in self.external_actions_spec:
-                self.agent_energy[agent] -= self.external_actions_spec[action_name][
-                    "cost"
-                ]
+                if not act.get("external_cost_paid"):
+                    self.agent_energy[agent] -= self.external_actions_spec[action_name][
+                        "cost"
+                    ]
                 self.logger.log(
                     time=self.step_count,
                     event_type=Event.EXTERNAL_REQUEST,
@@ -778,6 +901,9 @@ class BaseWorld(RolesMixin, ABC):
                     gift_error = "Extra energy must be a nonnegative integer"
 
                 failure = gift_error or self._reproduction_error(agent, gift)
+                offspring_model = action_params.get("offspring_model")
+                if self.offspring_model_choices and offspring_model not in self.offspring_model_choices:
+                    failure = f"Choose offspring_model from {', '.join(self.offspring_model_choices)}"
                 # Failed attempts pay the base cost. Gifts require a successful birth.
                 if self.spawn_allowed:
                     self.agent_energy[agent] -= self.reproduction_cost
@@ -894,7 +1020,7 @@ class BaseWorld(RolesMixin, ABC):
                         inherited_exclusions |= self.agent_excluded_actions.get(
                             parent_b_tag, set()
                         )
-                    self.add_agent(
+                    _, child_info = self.add_agent(
                         agent_tag=new_agent_idx,
                         agent_name=offspring_name,
                         genome_type=self.agent_genomes[agent],
@@ -929,6 +1055,8 @@ class BaseWorld(RolesMixin, ABC):
                         "child_name": offspring_name,
                         "child_tag": new_agent_idx,
                     }
+                    if self.offspring_model_choices:
+                        spawn_info["offspring_model"] = offspring_model
                     if parent_b_tag is not None:
                         spawn_info["parent_b_tag"] = parent_b_tag
                         spawn_info["parent_b_name"] = self.agent_names[parent_b_tag]
@@ -944,7 +1072,7 @@ class BaseWorld(RolesMixin, ABC):
                         )
 
                     infos[agent] = {"spawn": spawn_info}
-                    infos[new_agent_idx] = {}
+                    infos[new_agent_idx] = child_info
                     log_kwargs: Dict[str, Any] = dict(
                         time=self.step_count,
                         agent_tag=agent,
@@ -1041,10 +1169,7 @@ class BaseWorld(RolesMixin, ABC):
                             self.artifacts[art_to_pickup].users[agent].add(
                                 self.step_count
                             )
-                            self.artifacts[art_to_pickup].pose = f"Inv({agent})"
-                            self.pos_artifacts[pose].remove(art_to_pickup)
-                            self.agent_inventories[agent].add(art_to_pickup)
-                            self.artifact_location[art_to_pickup] = ("inv", agent)
+                            self.stow_artifact(art_to_pickup, agent)
                             status = "Success"
                     else:
                         status = f"Failed. No artifact with name {art_to_pickup} at current position"
@@ -1070,12 +1195,11 @@ class BaseWorld(RolesMixin, ABC):
                 pose = self.agent_pos[agent]
 
                 if art_to_drop in self.artifacts:
-                    if art_to_drop in self.agent_inventories[agent]:
+                    if not self.artifacts[art_to_drop].movable:
+                        status = f"Failed. Artifact {art_to_drop} is not movable."
+                    elif art_to_drop in self.agent_inventories[agent]:
                         self.artifacts[art_to_drop].users[agent].add(self.step_count)
-                        self.artifacts[art_to_drop].pose = pose
-                        self.agent_inventories[agent].remove(art_to_drop)
-                        self.pos_artifacts[pose].add(art_to_drop)
-                        self.artifact_location[art_to_drop] = ("map", pose)
+                        self.place_artifact(art_to_drop, pose)
                         status = "Success"
                     else:
                         status = (
@@ -1109,24 +1233,18 @@ class BaseWorld(RolesMixin, ABC):
                     status = f"Failed. No being with name {target_name}"
                 elif target_tag in nearby_agents_list:
                     giver_node = self.agent_pos[agent]
-                    if art_to_gift in self.agent_inventories[agent]:
+                    if art_to_gift in self.artifacts and not self.artifacts[art_to_gift].movable:
+                        status = f"Failed. Artifact {art_to_gift} is not movable."
+                    elif art_to_gift in self.agent_inventories[agent]:
                         # inventory -> target's inventory
-                        self.agent_inventories[agent].remove(art_to_gift)
-                        self.agent_inventories[target_tag].add(art_to_gift)
-                        self.artifacts[art_to_gift].pose = f"Inv({target_tag})"
-                        self.artifact_location[art_to_gift] = ("inv", target_tag)
+                        self.stow_artifact(art_to_gift, target_tag)
                         self.artifacts[art_to_gift].users[agent].add(self.step_count)
-                        self.artifacts[art_to_gift].users[target_tag].add(
-                            self.step_count
-                        )
+                        self.artifacts[art_to_gift].users[target_tag].add(self.step_count)
                         status = "Success"
                     elif art_to_gift in self.pos_artifacts[giver_node]:
                         # node -> target's node
                         target_node = self.agent_pos[target_tag]
-                        self.pos_artifacts[giver_node].discard(art_to_gift)
-                        self.pos_artifacts[target_node].add(art_to_gift)
-                        self.artifacts[art_to_gift].pose = target_node
-                        self.artifact_location[art_to_gift] = ("map", target_node)
+                        self.place_artifact(art_to_gift, target_node)
                         self.artifacts[art_to_gift].users[agent].add(self.step_count)
                         self.artifacts[art_to_gift].users[target_tag].add(
                             self.step_count
@@ -1259,72 +1377,17 @@ class BaseWorld(RolesMixin, ABC):
 
         # World events
         # ================================
-        # Handle artifact expiration
+        # Handle artifact expiration. A stored artifact is aged by its holder.
         # ---------------------------
-        # Map
-        updated_artifacts = defaultdict(set)
-        for cell, artifacts in self.pos_artifacts.items():
-            for art_name in artifacts:
-                artifact = self.artifacts[art_name]
-                if artifact.creation_time != self.step_count:
-                    artifact.remaining_time -= 1
-                if artifact.remaining_time <= 0:
-                    self.artifacts.pop(art_name)
-                    self.artifact_location.pop(art_name, None)
-                    artifact.deletion_time = self.step_count
-                    self.expired_artifacts.append(artifact)
-                    self.logger.log(
-                        time=self.step_count,
-                        event_type=Event.ARTIFACT_REMOVED,
-                        artifact=artifact.serialize(),
-                        pose=cell,
-                    )
-                else:
-                    updated_artifacts[cell].add(art_name)
-        self.pos_artifacts = updated_artifacts
-
-        # Inventory
-        updated_inventory = defaultdict(set)
-        for agent_tag, inventory in self.agent_inventories.items():
-            for art_name in inventory:
-                artifact = self.artifacts[art_name]
-                if artifact.creation_time != self.step_count:
-                    artifact.remaining_time -= 1
-                if artifact.remaining_time <= 0:
-                    self.artifacts.pop(art_name)
-                    self.artifact_location.pop(art_name, None)
-                    artifact.deletion_time = self.step_count
-                    self.expired_artifacts.append(artifact)
-                    self.logger.log(
-                        time=self.step_count,
-                        event_type=Event.ARTIFACT_REMOVED,
-                        artifact=artifact.serialize(),
-                        possessor_tag=agent_tag,
-                        possessor_name=self.agent_names[agent_tag],
-                    )
-                else:
-                    updated_inventory[agent_tag].add(art_name)
-        self.agent_inventories = updated_inventory
-
-        # Library
-        updated_library: Set[str] = set()
-        for art_name in self.library:
-            artifact = self.artifacts[art_name]
-            if artifact.creation_time != self.step_count:
-                artifact.remaining_time -= 1
-            if artifact.remaining_time <= 0:
-                self.artifacts.pop(art_name)
-                self.artifact_location.pop(art_name, None)
-                artifact.deletion_time = self.step_count
-                self.expired_artifacts.append(artifact)
-                self.logger.log(
-                    time=self.step_count,
-                    event_type=Event.ARTIFACT_REMOVED,
-                    artifact=artifact.serialize(),
-                )
+        for art_name, (kind, where) in list(self.artifact_location.items()):
+            if kind == "stored" or self.age_artifact(art_name):
+                continue
+            if kind == "map":
+                self.expire_artifact(art_name, pose=where)
             else:
-                updated_library.add(art_name)
-        self.library = updated_library
+                self.expire_artifact(
+                    art_name, possessor_tag=where, possessor_name=self.agent_names[where]
+                )
         # ---------------------------
 
         # ---- Scenario mechanics ----
@@ -1401,6 +1464,7 @@ class BaseWorld(RolesMixin, ABC):
         self._notes.clear()
 
         self.step_count += 1
+        self.stamp_turn(observations)
         self.food_count.append(sum(self.food.values()))
 
         return observations, rewards, done_dict, done_dict, infos
@@ -1437,8 +1501,6 @@ class BaseWorld(RolesMixin, ABC):
         effective = amount * coefficient
 
         if target is None:
-            if self.rng is None:
-                self.rng = np.random.default_rng()
             if effective > 0:
                 n_full = int(effective // self._max_food_value)
                 remainder = effective % self._max_food_value
@@ -1483,9 +1545,6 @@ class BaseWorld(RolesMixin, ABC):
 
     def _decay_and_respawn_food(self) -> None:
         """Decay food values and respawn expired ones."""
-        if self.rng is None:
-            self.rng = np.random.default_rng()
-
         roll = self.rng.random(len(self.food))
         expired = []
         items = list(self.food.items())
@@ -1565,6 +1624,83 @@ class BaseWorld(RolesMixin, ABC):
             if other != tag and self.distance(origin, pos) <= r
         )
 
+    def audience_of(self, tag: str) -> List[str]:
+        """Tags of the beings that receive what the agent broadcasts: the beings
+        within its perception range."""
+        return sorted(set(self._get_nearby_agents(tag)))
+
+    def send_messages(self, sender: str, messages: dict, info: dict) -> None:
+        """Deliver the messages of one turn. The text under BROADCAST_KEY reaches
+        every being that can hear the sender. Every other key names one being,
+        who gets the text as a private message. Problems go to the sender's info."""
+        sender_name = self.agent_names[sender]
+        broadcast = ""
+        notes = []
+        if not isinstance(messages, dict):
+            notes.append(MESSAGES_MALFORMED)
+            messages = {}
+        for receiver, text in messages.items():
+            if not isinstance(text, str):
+                text = str(text)
+            if not text:
+                continue
+            text, tail = self.cut_message(text)
+            if receiver == BROADCAST_KEY:
+                if not self.allow_broadcasts:
+                    notes.append(BROADCASTS_OFF)
+                    continue
+                broadcast = text
+                if tail:
+                    notes.append(BROADCAST_CUT.format(limit=self.max_message_length, tail=tail))
+                continue
+            reason = self.cannot_message(sender, receiver)
+            if reason:
+                notes.append(NOT_DELIVERED.format(receiver=receiver, reason=reason))
+                continue
+            target = self.name_to_tag[receiver]
+            self.private_messages.setdefault(target, {})[sender_name] = text
+            self.private_chat.setdefault(self.step_count, []).append(
+                f"{sender_name} -> {receiver}: {text}"
+            )
+            self.on_private_message(sender, target)
+            if tail:
+                notes.append(
+                    PRIVATE_CUT.format(receiver=receiver, limit=self.max_message_length, tail=tail)
+                )
+        self.msg_raw[sender] = broadcast
+        if broadcast:
+            self.chat.setdefault(self.step_count, []).append(f"{sender_name}: {broadcast}")
+            self.chat_senders.setdefault(self.step_count, []).append(sender)
+        if notes:
+            info["Message delivery"] = "\n".join(notes)
+
+    def cut_message(self, text: str) -> Tuple[str, str]:
+        """Cut a message to max_message_length tokens. Returns the text kept and
+        its last words, which are empty when nothing was cut."""
+        if self.max_message_length <= 0:
+            return text, ""
+        tokens = ENCODER.encode(text)
+        if len(tokens) <= self.max_message_length:
+            return text, ""
+        text = ENCODER.decode(tokens[: self.max_message_length])
+        return text, " ".join(text.split()[-6:])
+
+    def cannot_message(self, sender: str, receiver: str) -> str:
+        """Why a private message from the sender cannot reach the named being:
+        empty when it can. The being must exist, differ from the sender, and be
+        within the sender's perception range."""
+        target = self.name_to_tag.get(receiver)
+        if target is None or target not in self.agent_registry:
+            return NO_SUCH_BEING.format(receiver=receiver)
+        if target == sender:
+            return SELF_MESSAGE
+        if target not in self._get_nearby_agents(sender):
+            return self.out_of_reach_text.format(name=receiver)
+        return ""
+
+    def on_private_message(self, sender: str, target: str) -> None:
+        """Called once a private message is delivered. Worlds may react."""
+
     def _unique_artifact_name(self, art_name: str) -> str:
         idx_count = 1
         while art_name in self._all_artifact_names:
@@ -1578,7 +1714,7 @@ class BaseWorld(RolesMixin, ABC):
         kwargs = dict(params)
         if issubclass(cls, TextArtifact):
             kwargs.setdefault("max_tokens", self.max_artifact_tokens)
-        return cls(
+        artifact = cls(
             name=art_name,
             payload=payload,
             pose=pose,
@@ -1588,6 +1724,7 @@ class BaseWorld(RolesMixin, ABC):
             movable=movable,
             **kwargs,
         )
+        return artifact
 
     @staticmethod
     def artifact_from_ckpt(data: dict) -> Artifact:
@@ -1597,15 +1734,6 @@ class BaseWorld(RolesMixin, ABC):
         if cls is None:
             raise ValueError(f"Checkpoint holds an artifact of unknown type '{art_type}'")
         return cls.deserialize(data)
-
-    def _place_new_artifact(self, art_name: str, pose, to_inventory: str | None) -> None:
-        if to_inventory is None:
-            self.pos_artifacts[pose].add(art_name)
-            self.artifact_location[art_name] = ("map", pose)
-        else:
-            self.agent_inventories[to_inventory].add(art_name)
-            self.artifacts[art_name].pose = f"Inv({to_inventory})"
-            self.artifact_location[art_name] = ("inv", to_inventory)
 
     def note(self, tag: str, key: str, text: str) -> None:
         """Append one line to the agent's next observation under `key`."""
@@ -1648,6 +1776,12 @@ class BaseWorld(RolesMixin, ABC):
             reason = "unknown"
         log.info(announcement)
 
+        doomed = self._doomed_artifacts(agent)
+        for mechanic in self.mechanics:
+            mechanic.on_death(self, agent, doomed)
+        expired = self._doomed_artifacts(agent)
+        for art_name in expired:
+            self.expire_artifact(art_name, reason="owner_died")
         energy, pos, dropped = self._remove_agent(agent)
         if pos is not None and self.drop_food_on_death:
             self.food[pos] = self.food.get(pos, 0) + max(
@@ -1659,7 +1793,7 @@ class BaseWorld(RolesMixin, ABC):
             "name": self.agent_names[agent],
             "position": pos,
             "reason": reason,
-            "artifacts": dropped,
+            "artifacts": sorted(dropped + expired),
             "step": self.step_count,
         })
         if self.logger:
@@ -1714,21 +1848,23 @@ class BaseWorld(RolesMixin, ABC):
         self.agent_genomes.pop(agent, None)
         energy = self.agent_energy.pop(agent, 0)
         self.agent_time.pop(agent, None)
+        self.agent_lifespan.pop(agent, None)
         self.msg_raw.pop(agent, None)
         pos = self.agent_pos.pop(agent, None)
 
         dropped: List[str] = []
         if pos is not None:
-            artifacts = self.agent_inventories.pop(agent, None)
-            if artifacts:
-                dropped = sorted(artifacts)
-                for art_name in artifacts:
-                    self.artifacts[art_name].pose = pos
-                    self.pos_artifacts[pos].add(art_name)
-                    self.artifact_location[art_name] = ("map", pos)
-
+            dropped = sorted(self.agent_inventories.get(agent, set()))
+            for art_name in dropped:
+                self.place_artifact(art_name, pos)
+            self.agent_inventories.pop(agent, None)
             self.pos_to_agent[pos].discard(agent)
         return energy, pos, dropped
+
+    def _doomed_artifacts(self, agent: str) -> List[str]:
+        """Names of the artifacts the world discards when `agent` dies. None in
+        this world: a dead being's inventory falls where it stood."""
+        return []
 
     def _inventory_lines(self, agent: str) -> List[str]:
         """One line per kind of artifact; several of a kind share it, counted."""
@@ -1778,8 +1914,8 @@ class BaseWorld(RolesMixin, ABC):
         itself, not by a per-node affordance).
 
         The base handles the role actions. Subclasses that add their own action
-        vocabulary (e.g. social_graph's `connect`, `disconnect`, `noop`,
-        `send_direct_message`) override this and fall back to super(). Return
+        vocabulary (e.g. social_graph's `connect`, `disconnect`, `noop`)
+        override this and fall back to super(). Return
         True if the action was handled (so the standard dispatch is skipped),
         False otherwise.
         """
@@ -2094,6 +2230,7 @@ class BaseWorld(RolesMixin, ABC):
 
     def _finish_obs(self, agent: str, obs: dict) -> None:
         """Fold the role text and the subclass sections into observation_text."""
+        obs["incoming_dms"] = dict(self.private_messages.get(agent, {}))
         self._extend_obs(agent, obs)
         self._stamp_role_obs(agent, obs)
         # The prompt renders only observation_text, so fold everything in.
@@ -2171,7 +2308,8 @@ class BaseWorld(RolesMixin, ABC):
             self.artifact_creation
             and self.agent_energy[agent_tag] >= self.artifact_creation_cost
         ):
-            entry = create_artifact_text()
+            types = creatable_types()
+            entry = create_artifact_text(types)
             entry["params"] = dict(entry["params"])
             if not self.allow_fixed_artifacts:
                 # Every artifact is movable, so don't ask the agent to choose.
@@ -2229,8 +2367,11 @@ class BaseWorld(RolesMixin, ABC):
                         },
                     }
 
-                if self.agent_inventories[agent_tag]:
-                    inventory = list(self.agent_inventories[agent_tag])
+                inventory = [
+                    name for name in self.agent_inventories[agent_tag]
+                    if self.artifacts[name].movable
+                ]
+                if inventory:
                     available_actions["drop_artifact"] = {
                         "description": ACTION_TEXT["drop_artifact"]["description"],
                         "params": {
@@ -2242,10 +2383,8 @@ class BaseWorld(RolesMixin, ABC):
                             },
                         },
                     }
-                # give_artifact: a giveable artifact is one in the agent's
-                # inventory OR a movable artifact on its own node. Offered when a
-                # peer is nearby.
-                givable = list(self.agent_inventories[agent_tag]) + movable_at_pos
+                # Give movable artifacts from inventory or the current node to nearby peers.
+                givable = inventory + movable_at_pos
                 if givable and nearby_agents:
                     available_actions["give_artifact"] = {
                         "description": ACTION_TEXT["give_artifact"]["description"],
@@ -2283,6 +2422,7 @@ class BaseWorld(RolesMixin, ABC):
                         genome_type=self.agent_genomes[agent_tag],
                         same_type_nearby_names=same_type_nearby,
                         finite_energy=finite_energy,
+                        offspring_model_choices=self.offspring_model_choices,
                     )
                 ]
             )
@@ -2313,41 +2453,26 @@ class BaseWorld(RolesMixin, ABC):
         return available_actions
 
     def _get_avail_actions(
-        self, agent_tag: str, nearby_agents: bool | None = None
+        self, agent_tag: str, nearby_agents: bool | None = None, *, cache: bool = True
     ) -> dict:
-        """Build the action set, then apply node affordances/removals/exclusions
-        once — after any subclass additions, so a suppressed action can't reappear.
-        """
+        """Build the action set, add the affordances and the mechanics' entries, then
+        apply every removal and exclusion once, so a suppressed action cannot
+        reappear. A name is removed when it matches in full."""
         available_actions = self._build_avail_actions(agent_tag, nearby_agents)
         agent_position = self.agent_pos[agent_tag]
-
-        # Affordances: add-mode node and agent actions first, then every
-        # remove-mode suppression. A removal from either source wins.
         available_actions.update(self._get_location_affordance(agent_position))
         available_actions.update(self._get_agent_affordance(agent_tag))
-        for _rm in self._get_location_removals(agent_position) | self._get_agent_removals(
-            agent_tag
-        ):
-            available_actions.pop(_rm, None)
-
-        # Scenario-wide then per-agent excluded actions.
-        for exc_set in (
-            self.excluded_actions,
-            self.agent_excluded_actions.get(agent_tag, set()),
-        ):
-            if exc_set:
-                available_actions = {
-                    k: v
-                    for k, v in available_actions.items()
-                    if not any(
-                        k == exc or (k.startswith(exc + "_") and k not in ACTION_TEXT)
-                        for exc in exc_set
-                    )
-                }
-
         for mechanic in self.mechanics:
             available_actions = mechanic.on_menu(self, agent_tag, available_actions)
-        self.agent_avail_actions[agent_tag] = available_actions
+        for name in (
+            self._get_location_removals(agent_position)
+            | self._get_agent_removals(agent_tag)
+            | self.excluded_actions
+            | self.agent_excluded_actions.get(agent_tag, set())
+        ):
+            available_actions.pop(name, None)
+        if cache:
+            self.agent_avail_actions[agent_tag] = available_actions
         return available_actions
 
     def _wrap_text(self, text, max_width):
@@ -2387,12 +2512,18 @@ class BaseWorld(RolesMixin, ABC):
         self.agent_excluded_actions.pop(agent_tag, None)
         self.agent_energy.pop(agent_tag, None)
         self.agent_time.pop(agent_tag, None)
+        self.agent_lifespan.pop(agent_tag, None)
         self.msg_raw.pop(agent_tag, None)
-        self.agent_inventories.pop(agent_tag, None)
         self.agent_trajectories.pop(agent_tag, None)
         self.agent_avail_actions.pop(agent_tag, None)
         self.agent_colors.pop(agent_tag, None)
         pos = self.agent_pos.pop(agent_tag, None)
+        for art_name in sorted(self.agent_inventories.get(agent_tag, set())):
+            if pos is not None:
+                self.place_artifact(art_name, pos)
+            else:
+                self.expire_artifact(art_name, reason="orphan_evicted")
+        self.agent_inventories.pop(agent_tag, None)
         if pos is not None and pos in self.pos_to_agent:
             self.pos_to_agent[pos].discard(agent_tag)
             if not self.pos_to_agent[pos]:
@@ -2408,7 +2539,7 @@ class BaseWorld(RolesMixin, ABC):
     def get_state_ckpt(self) -> dict:
         """Serialize environment state. Stored via pickle so no JSON encoding needed."""
         ckpt = {
-            "rng": self._serialize(self.rng) if self.rng is not None else None,
+            "rng": self._serialize(self.rng),
             "food": dict(self.food),
             "food_count": list(self.food_count),
             "_food_zone_centers": self._food_zone_centers,
@@ -2417,7 +2548,6 @@ class BaseWorld(RolesMixin, ABC):
                 name: art.serialize() for name, art in self.artifacts.items()
             },
             "agent_inventories": dict(self.agent_inventories),
-            "library": sorted(self.library),
             "artifact_location": dict(self.artifact_location),
             "expired_artifacts": [art.serialize() for art in self.expired_artifacts],
             "_all_artifact_names": sorted(self._all_artifact_names),
@@ -2429,11 +2559,13 @@ class BaseWorld(RolesMixin, ABC):
             },
             "agent_energy": dict(self.agent_energy),
             "agent_time": dict(self.agent_time),
+            "agent_lifespan": dict(self.agent_lifespan),
             "agent_spawn": dict(self.agent_spawn),
             "agent_names": dict(self.agent_names),
             "agent_colors": dict(self.agent_colors),
             "msg_raw": dict(self.msg_raw),
             "chat": dict(self.chat),
+            "private_chat": dict(self.private_chat),
             "agent_registry": sorted(self.agent_registry),
             "agent_excluded_actions": {
                 t: sorted(s) for t, s in self.agent_excluded_actions.items()
@@ -2493,7 +2625,6 @@ class BaseWorld(RolesMixin, ABC):
             self.artifacts[name] = self.artifact_from_ckpt(data)
 
         self.agent_inventories = defaultdict(set, state_ckpt["agent_inventories"])
-        self.library = set(state_ckpt.get("library", []))
         self.artifact_location = dict(state_ckpt["artifact_location"])
 
         self.expired_artifacts = []
@@ -2516,11 +2647,13 @@ class BaseWorld(RolesMixin, ABC):
         self.pos_to_agent = defaultdict(set, state_ckpt["pos_to_agent"])
         self.agent_energy = dict(state_ckpt["agent_energy"])
         self.agent_time = dict(state_ckpt["agent_time"])
+        self.agent_lifespan = dict(state_ckpt.get("agent_lifespan", self.agent_time))
         self.agent_spawn = dict(state_ckpt["agent_spawn"])
         self.agent_names = dict(state_ckpt["agent_names"])
         self.agent_colors = dict(state_ckpt["agent_colors"])
         self.msg_raw = dict(state_ckpt["msg_raw"])
         self.chat = dict(state_ckpt["chat"])
+        self.private_chat = dict(state_ckpt.get("private_chat", {}))
         # Needed for back-compatibility
         if isinstance(state_ckpt["agent_registry"], list):
             self.agent_registry = set(state_ckpt["agent_registry"])
@@ -2547,6 +2680,8 @@ class BaseWorld(RolesMixin, ABC):
 
         with open(self.logger.save_path.parent / "messages.json", "w") as f:
             json.dump(self.chat, f, indent=4)
+        with open(self.logger.save_path.parent / "private_messages.json", "w") as f:
+            json.dump(self.private_chat, f, indent=4)
 
         active_artifacts = []
         for art_name, artifact in self.artifacts.items():
@@ -2557,8 +2692,8 @@ class BaseWorld(RolesMixin, ABC):
                 if kind == "inv":
                     art_dict["pose"] = f"Inv({where})"
                     art_dict["owner"] = where
-                elif kind == "library":
-                    art_dict["pose"] = "Library"
+                elif kind == "stored":
+                    art_dict["pose"] = "stored"
                 else:
                     art_dict["pose"] = str(where)
             active_artifacts.append(art_dict)
@@ -2666,6 +2801,7 @@ class BaseWorld(RolesMixin, ABC):
         self.pos_to_agent[pos].add(name)
         self.agent_energy[name] = self.init_agent_energy
         self.agent_time[name] = np.inf if self.lifespan == -1 else self.lifespan
+        self.agent_lifespan[name] = self.agent_time[name]
         self.agent_spawn[name] = list()
 
     @abstractmethod

@@ -9,7 +9,8 @@ from terralingua.environment.artifact import Artifact, register_artifact_type
 class ShelterArtifact(Artifact):
     """A fixed shelter. Beings on its cell take no storm damage."""
 
-    description = "A shelter. Beings on its cell are safe from storms."
+    type_description = "A shelter. Beings on its cell are safe from storms."
+    payload_description = "No content is required."
 
     def __init__(self, *args, **kwargs):
         kwargs["movable"] = False

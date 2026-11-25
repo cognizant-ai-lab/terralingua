@@ -100,7 +100,6 @@ function formatAction(action, params){
     }
     case "reproduce":        return "Reproduce";
     case "set_color":        return params.color?`Set Color ${params.color}`:"Set Color";
-    case "send_direct_message": return params.target?`Send Direct Message to ${params.target}`:"Send Direct Message";
     case "follow":              return params.target?`Follow ${params.target}`:"Follow";
     case "request_connection":  return params.target?`Request Connection to ${params.target}`:"Request Connection";
     case "accept_connection":   return params.target?`Accept Connection from ${params.target}`:"Accept Connection";
@@ -126,11 +125,15 @@ export function renderHistoryList(){
     const stepLabel=offset===0?"now":`${offset} step${offset===1?"":"s"} ago`;
     let html=`<div class="hist-step-hdr">${stepLabel}&nbsp;&nbsp;⚡ ${e.energy??"-"}&nbsp;&nbsp;⏱ ${e.time_left??"-"}</div>`;
     html+=`<div class="hist-action">${escHtml(act)}</div>`;
-    if(e.action==="send_direct_message"&&e.params&&e.params.content)
-      html+=`<div class="hist-dm">"${escHtml(e.params.content)}"</div>`;
-    if(e.message){
-      html+=`<div class="hist-msg-label">Broadcast</div>`;
-      html+=`<div class="hist-msg">"${escHtml(e.message)}"</div>`;
+    for(const [receiver,text] of Object.entries(e.messages||{})){
+      if(!text) continue;
+      if(receiver==="broadcast"){
+        html+=`<div class="hist-msg-label">Broadcast</div>`;
+        html+=`<div class="hist-msg">"${escHtml(text)}"</div>`;
+      } else {
+        html+=`<div class="hist-msg-label">To ${escHtml(receiver)}</div>`;
+        html+=`<div class="hist-dm">"${escHtml(text)}"</div>`;
+      }
     }
     if(e.inventory&&e.inventory.length) html+=`<div class="hist-inv">${e.inventory.map(i=>{
       const name=i.replace(/^A\([^)]+\):\s*/,"");
